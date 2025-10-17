@@ -30,16 +30,21 @@ from sklearn.model_selection import GridSearchCV
 
 import xgboost as xgb
 
-try:
-    import optuna
-except Exception:  # pragma: no cover
-    optuna = None  # type: ignore
+import optuna
+import mlflow
+import mlflow.sklearn
 
-try:
-    import mlflow
-    import mlflow.sklearn
-except Exception:  # pragma: no cover
-    mlflow = None  # type: ignore
+import logging
+import sys, logging, inspect
+
+logger = logging.getLogger("train_xgb")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s - %(message)s"))
+    logger.addHandler(handler)
+logger.propagate = False
 
 
 @dataclass
@@ -80,14 +85,22 @@ class FeatureBuilder:
 
         self.numeric_features = numeric_cols
         self.categorical_features = categorical_cols
+        logger.info("Identified %d numeric and %d categorical features", len(self.numeric_features), len(self.categorical_features))
 
         numeric_transformer = Pipeline(steps=[
             ("imputer", SimpleImputer(strategy="median")),
         ])
 
+        ohe_kwargs = {"handle_unknown": "ignore"}
+        if "sparse_output" in inspect.signature(OneHotEncoder).parameters:
+            ohe_kwargs["sparse_output"] = False
+        else:
+            ohe_kwargs["sparse"] = False
+        ohe = OneHotEncoder(**ohe_kwargs)
+
         categorical_transformer = Pipeline(steps=[
             ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("ohe", OneHotEncoder(handle_unknown="ignore", sparse=False)),
+            ("ohe", ohe),
         ])
 
         self.preprocessor = ColumnTransformer(
@@ -109,22 +122,26 @@ class FeatureBuilder:
 
 
 def load_data(data_dir: Path, label_col: str, id_col: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    logger.info("Loading data from %s", data_dir)
     train_identity = pd.read_csv(data_dir / "train_identity.csv")
     train_transaction = pd.read_csv(data_dir / "train_transaction.csv")
     train = pd.merge(train_transaction, train_identity, on=id_col, how="left")
     train.columns = [c.replace('-', '_') for c in train.columns]
+    logger.info("Train shape: %s", (train.shape[0], train.shape[1]))
     if label_col not in train.columns:
         raise ValueError(f"Label column '{label_col}' not found in training data")
     return train, pd.DataFrame()
 
 
 def stratified_split(train: pd.DataFrame, label_col: str, seed: int, test_size: float) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    logger.info("Creating stratified split with test_size=%.2f", test_size)
     train_df, valid_df = train_test_split(
         train,
         test_size=test_size,
         stratify=train[label_col],
         random_state=seed,
     )
+    logger.info("Split sizes -> train: %d, valid: %d", len(train_df), len(valid_df))
     return train_df, valid_df
 
 
@@ -152,7 +169,7 @@ def objective_factory(
 
         cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
         scores: List[float] = []
-        for train_idx, valid_idx in cv.split(X, y):
+        for fold_idx, (train_idx, valid_idx) in enumerate(cv.split(X, y), start=1):
             X_tr, X_va = X[train_idx], X[valid_idx]
             y_tr, y_va = y[train_idx], y[valid_idx]
             if sample_weight is not None:
@@ -177,8 +194,9 @@ def objective_factory(
             preds = model.predict_proba(X_va)[:, 1]
             score = average_precision_score(y_va, preds)
             scores.append(score)
-
-        return float(np.mean(scores))
+        mean_ap = float(np.mean(scores))
+        logger.info("Trial %d finished with AP=%.5f", trial.number, mean_ap)
+        return mean_ap
 
     return objective
 
@@ -190,6 +208,7 @@ def grid_refine(
     seed: int,
     sample_weight: Optional[np.ndarray],
 ) -> Dict[str, object]:
+    logger.info("Starting GridSearchCV refinement around Optuna best params")
     model = xgb.XGBClassifier(
         objective="binary:logistic",
         eval_metric="aucpr",
@@ -216,6 +235,7 @@ def grid_refine(
     )
     fit_kwargs = {"sample_weight": sample_weight} if sample_weight is not None else {}
     gs.fit(X, y, **fit_kwargs)
+    logger.info("GridSearchCV best AP=%.5f with params=%s", gs.best_score_, gs.best_params_)
     refined = base_params.copy()
     refined.update(gs.best_params_)
     return refined
@@ -228,6 +248,7 @@ def fit_best_model(
     seed: int,
     sample_weight: Optional[np.ndarray],
 ) -> xgb.XGBClassifier:
+    logger.info("Fitting final model on %d rows", X.shape[0])
     model = xgb.XGBClassifier(
         objective="binary:logistic",
         eval_metric="aucpr",
@@ -243,18 +264,23 @@ def fit_best_model(
 
 def evaluate(model: xgb.XGBClassifier, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
     probs = model.predict_proba(X)[:, 1]
-    return {
+    metrics = {
         "roc_auc": float(roc_auc_score(y, probs)),
         "average_precision": float(average_precision_score(y, probs)),
     }
+    logger.info("Evaluation: ROC_AUC=%.5f, AP=%.5f", metrics["roc_auc"], metrics["average_precision"])
+    return metrics
 
 
 def run_training(cfg: TrainConfig) -> None:
+    logger.info("==== XGBoost Training Start ====")
+    logger.info("Config: %s", cfg)
     cfg.results_dir.mkdir(parents=True, exist_ok=True)
 
     train_df, _ = load_data(cfg.data_dir, cfg.label_col, cfg.id_col)
     train_part, valid_part = stratified_split(train_df, cfg.label_col, cfg.seed, cfg.test_size)
 
+    logger.info("Fitting preprocessing and transforming data")
     builder = FeatureBuilder(categorical_threshold=cfg.categorical_threshold)
     X_train = builder.fit_transform(train_part, label_col=cfg.label_col, id_col=cfg.id_col)
     y_train = train_part[cfg.label_col].values.astype(int)
@@ -264,9 +290,7 @@ def run_training(cfg: TrainConfig) -> None:
     sample_weight_train = compute_sample_weight(class_weight="balanced", y=y_train)
     sample_weight_valid = compute_sample_weight(class_weight="balanced", y=y_valid)
 
-    if optuna is None:
-        raise RuntimeError("optuna is not installed. Please install requirements-ml.txt")
-
+    logger.info("Starting Optuna study with %d trials and %d-fold CV", cfg.n_trials, cfg.n_splits)
     study = optuna.create_study(
         direction="maximize",
         study_name=f"xgb_optuna_{int(time.time())}",
@@ -283,8 +307,9 @@ def run_training(cfg: TrainConfig) -> None:
     if cfg.max_time_minutes is not None:
         timeout = int(cfg.max_time_minutes * 60)
 
-    study.optimize(objective, n_trials=cfg.n_trials, timeout=timeout, show_progress_bar=False)
+    study.optimize(objective, n_trials=cfg.n_trials, timeout=timeout, show_progress_bar=True)
     best_params = study.best_trial.params
+    logger.info("Optuna best AP=%.5f with params=%s", study.best_value, best_params)
 
     if cfg.use_grid_refine:
         best_params = grid_refine(
@@ -294,7 +319,9 @@ def run_training(cfg: TrainConfig) -> None:
             seed=cfg.seed,
             sample_weight=sample_weight_train,
         )
+        logger.info("Params after grid refinement=%s", best_params)
 
+    logger.info("Training final models and evaluating")
     model = fit_best_model(
         X=np.vstack([X_train, X_valid]),
         y=np.concatenate([y_train, y_valid]),
@@ -321,10 +348,11 @@ def run_training(cfg: TrainConfig) -> None:
         json.dump(metrics_train, f, indent=2)
     with open(art_dir / "metrics_valid.json", "w", encoding="utf-8") as f:
         json.dump(metrics_valid, f, indent=2)
+    logger.info("Artifacts saved to %s", art_dir)
 
     if mlflow is not None:
         mlflow.set_experiment(cfg.experiment_name)
-        with mlflow.start_run(run_name=f"xgb_optuna_{cfg.n_trials}t_{cfg.n_splits}cv"):
+        with mlflow.start_run(run_name=f"xgb_optuna_{cfg.n_trials}t_{cfg.n_splits}cv") as run:
             mlflow.log_params(best_params)
             mlflow.log_params({
                 "seed": cfg.seed,
@@ -340,7 +368,9 @@ def run_training(cfg: TrainConfig) -> None:
                 mlflow.log_metric(f"valid_{k}", v)
             mlflow.log_artifacts(str(art_dir))
             mlflow.sklearn.log_model(model, artifact_path="model")
+            logger.info("MLflow run logged with run_id=%s", run.info.run_id)
 
+    logger.info("==== Training complete ====")
     print("Training complete. Key metrics (split model):")
     print("Train:", metrics_train)
     print("Valid:", metrics_valid)
