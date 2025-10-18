@@ -1,3 +1,4 @@
 /.fraud
 /ieee-fraud-detection-data
 /ai-gen
+*.pyc

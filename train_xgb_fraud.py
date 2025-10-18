@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
+import pandas as pd
 import optuna
 import xgboost as xgb
 from tqdm.auto import tqdm
@@ -38,7 +39,8 @@ from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 import mlflow
 import mlflow.xgboost
-
+import shap
+from sklearn.calibration import calibration_curve
 from sklearn.metrics import (
     average_precision_score,
     auc,
@@ -49,6 +51,7 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
     roc_curve,
+    brier_score_loss
 )
 from sklearn.model_selection import train_test_split
 
@@ -56,18 +59,23 @@ from sklearn.model_selection import train_test_split
 # -------------------------------
 # Utilities
 # -------------------------------
+def _to_dataframe_xy(X: Any, y: Any) -> Tuple["pd.DataFrame", "pd.Series"]:
+    # --- X ---
+    if isinstance(X, pd.Series):
+        X = X.to_frame()
+    elif not isinstance(X, pd.DataFrame):
+        # Convert numpy array to DataFrame with synthetic names
+        X = pd.DataFrame(X, columns=[f"f{i}" for i in range(X.shape[1])])
 
-def _to_numpy_xy(X: Any, y: Any) -> Tuple[np.ndarray, np.ndarray]:
-    import pandas as pd  # local import to avoid hard dependency if not needed
-    if isinstance(X, (pd.DataFrame, pd.Series)):
-        X = X.values
-    if isinstance(y, (pd.DataFrame, pd.Series)):
-        # If a DataFrame was passed, take first column
-        y = y.values.ravel()
-    y = np.asarray(y).astype(int)
-    X = np.asarray(X)
-    if y.ndim != 1:
-        y = y.ravel()
+    # --- y ---
+    if isinstance(y, pd.DataFrame):
+        y = y.iloc[:, 0]
+    elif not isinstance(y, pd.Series):
+        y = pd.Series(y)
+
+    # Ensure numeric dtype
+    y = y.astype(int)
+
     return X, y
 
 
@@ -212,7 +220,7 @@ def train_xgb_optuna(
     if n_jobs is None:
         n_jobs = os.cpu_count() or 4
 
-    X_np, y_np = _to_numpy_xy(X, y)
+    X_np, y_np = _to_dataframe_xy(X, y)
 
     # Split once; use validation for early stopping and objective
     X_tr, X_va, y_tr, y_va = train_test_split(
@@ -284,7 +292,7 @@ def train_xgb_optuna(
             pbar.update(1)
             if verbose:
                 print(f"[RUN] Trial {trial.number}: value={trial.value:.5f} | params={{'max_depth': {trial.params.get('max_depth')}, 'eta': {trial.params.get('learning_rate')}}}")
-        study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], show_progress_bar=False)
+        study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], show_progress_bar=False, gc_after_trial=True)
 
     best_params = dict(base_params)
     best_params.update(study.best_params)
@@ -328,12 +336,93 @@ def train_xgb_optuna(
         booster = final_model.get_booster()
         gain = booster.get_score(importance_type="gain")
         if gain:
-            import pandas as pd
             top = sorted(gain.items(), key=lambda kv: kv[1], reverse=True)[:50]
             fi_df = pd.DataFrame(top, columns=["feature", "gain"])
             fi_path = artifacts_dir / "feature_importance_top50.csv"
             fi_df.to_csv(fi_path, index=False)
             mlflow.log_artifact(str(fi_path), artifact_path="importances")
+
+        # --- SHAP explainability ---
+        explain_dir = artifacts_dir / "explainability"
+        explain_dir.mkdir(parents=True, exist_ok=True)
+
+        # Balanced sampling for SHAP visualization
+        fraud_idx = np.where(y_va == 1)[0]
+        nonfraud_idx = np.where(y_va == 0)[0]
+        n = min(len(fraud_idx), len(nonfraud_idx), 500)  # up to 1000 samples total
+        sel_idx = np.concatenate([
+            np.random.choice(fraud_idx, size=n, replace=False),
+            np.random.choice(nonfraud_idx, size=n, replace=False)
+        ])
+        np.random.shuffle(sel_idx)
+        X_shap = X_va.iloc[sel_idx]
+        y_shap = y_va.iloc[sel_idx]
+
+        # SHAP explainer (TreeExplainer for XGBoost)
+        explainer = shap.TreeExplainer(final_model)
+        shap_values = explainer.shap_values(X_shap)
+
+        # SHAP summary plot
+        plt.figure()
+        shap.summary_plot(shap_values, X_shap, show=False)
+        plt.title("SHAP Summary Plot (balanced sample)")
+        plt.tight_layout()
+        p = explain_dir / "shap_summary.png"
+        plt.savefig(p, dpi=150)
+        plt.close()
+        mlflow.log_artifact(str(p), artifact_path="explainability")
+
+        # SHAP beeswarm plot
+        plt.figure()
+        shap.summary_plot(shap_values, X_shap, plot_type="violin", show=False)
+        plt.title("SHAP Beeswarm Plot")
+        plt.tight_layout()
+        p = explain_dir / "shap_beeswarm.png"
+        plt.savefig(p, dpi=150)
+        plt.close()
+        mlflow.log_artifact(str(p), artifact_path="explainability")
+
+        # SHAP bar plot (mean absolute values)
+        plt.figure()
+        shap.summary_plot(shap_values, X_shap, plot_type="bar", show=False)
+        plt.title("SHAP Mean |Value| per Feature")
+        plt.tight_layout()
+        p = explain_dir / "shap_bar.png"
+        plt.savefig(p, dpi=150)
+        plt.close()
+        mlflow.log_artifact(str(p), artifact_path="explainability")
+
+        print(f"[INFO] Logged SHAP explainability plots to MLflow.")
+
+        # --- Calibration / Reliability ---
+        calib_dir = artifacts_dir / "calibration"
+        calib_dir.mkdir(parents=True, exist_ok=True)
+
+        # Compute calibration curve (10 bins)
+        prob_true, prob_pred = calibration_curve(y_va, y_prob_va, n_bins=10, strategy="uniform")
+
+        # Expected Calibration Error (ECE)
+        ece = np.average(np.abs(prob_true - prob_pred), weights=np.histogram(y_prob_va, bins=10)[0])
+        brier = brier_score_loss(y_va, y_prob_va)
+
+        mlflow.log_metric("ece", float(ece))
+        mlflow.log_metric("brier_score", float(brier))
+
+        # Reliability diagram
+        plt.figure()
+        plt.plot(prob_pred, prob_true, marker="o", label="Model calibration")
+        plt.plot([0, 1], [0, 1], linestyle="--", color="gray", label="Perfect calibration")
+        plt.xlabel("Predicted probability")
+        plt.ylabel("True fraction of frauds")
+        plt.title(f"Reliability Diagram (ECE={ece:.4f}, Brier={brier:.4f})")
+        plt.legend(loc="best")
+        plt.tight_layout()
+        p = calib_dir / "reliability_diagram.png"
+        plt.savefig(p, dpi=150)
+        plt.close()
+        mlflow.log_artifact(str(p), artifact_path="calibration")
+
+        print(f"[INFO] Logged calibration diagram and ECE={ece:.4f}, Brier={brier:.4f}")
 
         # Log model
         mlflow.xgboost.log_model(final_model, artifact_path="model")
