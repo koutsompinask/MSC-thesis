@@ -1,0 +1,207 @@
+artifact_path: file:c:/Developer/MSC-thesis/mlruns/664171147929544695/models/m-fc412c1c64c94994a4f716618efb58a2/artifacts
+flavors:
+  catboost:
+    catboost_version: 1.2.8
+    code: null
+    data: model.cb
+    model_type: CatBoostClassifier
+    save_format: cbm
+  python_function:
+    data: model.cb
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.catboost
+    python_version: 3.12.9
+is_signature_from_type_hint: false
+mlflow_version: 3.5.0
+model_id: m-fc412c1c64c94994a4f716618efb58a2
+model_size_bytes: 1213450
+model_uuid: m-fc412c1c64c94994a4f716618efb58a2
+prompts: null
+run_id: ce9027220b8945d68d250ba80c76c903
+saved_input_example_info:
+  artifact_path: input_example.json
+  pandas_orient: split
+  serving_input_path: serving_input_example.json
+  type: dataframe
+signature:
+  inputs: '[{"type": "integer", "name": "ProductCD", "required": true}, {"type": "long",
+    "name": "card1", "required": true}, {"type": "double", "name": "card2", "required":
+    true}, {"type": "double", "name": "card3", "required": true}, {"type": "integer",
+    "name": "card4", "required": true}, {"type": "double", "name": "card5", "required":
+    true}, {"type": "integer", "name": "card6", "required": true}, {"type": "double",
+    "name": "addr1", "required": false}, {"type": "double", "name": "addr2", "required":
+    false}, {"type": "double", "name": "dist1", "required": false}, {"type": "double",
+    "name": "dist2", "required": false}, {"type": "integer", "name": "P_emaildomain",
+    "required": true}, {"type": "integer", "name": "R_emaildomain", "required": true},
+    {"type": "double", "name": "C1", "required": true}, {"type": "double", "name":
+    "C2", "required": true}, {"type": "double", "name": "C3", "required": true}, {"type":
+    "double", "name": "C4", "required": true}, {"type": "double", "name": "C5", "required":
+    true}, {"type": "double", "name": "C6", "required": true}, {"type": "double",
+    "name": "C7", "required": true}, {"type": "double", "name": "C8", "required":
+    true}, {"type": "double", "name": "C9", "required": true}, {"type": "double",
+    "name": "C10", "required": true}, {"type": "double", "name": "C11", "required":
+    true}, {"type": "double", "name": "C12", "required": true}, {"type": "double",
+    "name": "C13", "required": true}, {"type": "double", "name": "C14", "required":
+    true}, {"type": "double", "name": "D1", "required": true}, {"type": "double",
+    "name": "D2", "required": false}, {"type": "double", "name": "D3", "required":
+    false}, {"type": "double", "name": "D4", "required": false}, {"type": "double",
+    "name": "D5", "required": false}, {"type": "double", "name": "D6", "required":
+    false}, {"type": "double", "name": "D7", "required": false}, {"type": "double",
+    "name": "D8", "required": false}, {"type": "double", "name": "D9", "required":
+    false}, {"type": "double", "name": "D10", "required": true}, {"type": "double",
+    "name": "D11", "required": false}, {"type": "double", "name": "D12", "required":
+    false}, {"type": "double", "name": "D13", "required": false}, {"type": "double",
+    "name": "D14", "required": false}, {"type": "double", "name": "D15", "required":
+    true}, {"type": "integer", "name": "M1", "required": true}, {"type": "integer",
+    "name": "M2", "required": true}, {"type": "integer", "name": "M3", "required":
+    true}, {"type": "integer", "name": "M4", "required": true}, {"type": "integer",
+    "name": "M5", "required": true}, {"type": "integer", "name": "M6", "required":
+    true}, {"type": "integer", "name": "M7", "required": true}, {"type": "integer",
+    "name": "M8", "required": true}, {"type": "integer", "name": "M9", "required":
+    true}, {"type": "double", "name": "id_01", "required": false}, {"type": "double",
+    "name": "id_02", "required": false}, {"type": "double", "name": "id_03", "required":
+    false}, {"type": "double", "name": "id_04", "required": false}, {"type": "double",
+    "name": "id_05", "required": false}, {"type": "double", "name": "id_06", "required":
+    false}, {"type": "double", "name": "id_07", "required": false}, {"type": "double",
+    "name": "id_08", "required": false}, {"type": "double", "name": "id_09", "required":
+    false}, {"type": "double", "name": "id_10", "required": false}, {"type": "double",
+    "name": "id_11", "required": false}, {"type": "double", "name": "id_12", "required":
+    false}, {"type": "double", "name": "id_13", "required": false}, {"type": "double",
+    "name": "id_14", "required": false}, {"type": "double", "name": "id_15", "required":
+    false}, {"type": "double", "name": "id_16", "required": false}, {"type": "double",
+    "name": "id_17", "required": false}, {"type": "double", "name": "id_18", "required":
+    false}, {"type": "double", "name": "id_19", "required": false}, {"type": "double",
+    "name": "id_20", "required": false}, {"type": "double", "name": "id_21", "required":
+    false}, {"type": "double", "name": "id_22", "required": false}, {"type": "integer",
+    "name": "id_23", "required": true}, {"type": "double", "name": "id_24", "required":
+    false}, {"type": "double", "name": "id_25", "required": false}, {"type": "double",
+    "name": "id_26", "required": false}, {"type": "double", "name": "id_27", "required":
+    false}, {"type": "double", "name": "id_28", "required": false}, {"type": "double",
+    "name": "id_29", "required": false}, {"type": "integer", "name": "id_30", "required":
+    true}, {"type": "integer", "name": "id_31", "required": true}, {"type": "double",
+    "name": "id_32", "required": false}, {"type": "integer", "name": "id_33", "required":
+    true}, {"type": "integer", "name": "id_34", "required": true}, {"type": "double",
+    "name": "id_35", "required": false}, {"type": "double", "name": "id_36", "required":
+    false}, {"type": "double", "name": "id_37", "required": false}, {"type": "double",
+    "name": "id_38", "required": false}, {"type": "integer", "name": "DeviceType",
+    "required": true}, {"type": "integer", "name": "DeviceInfo", "required": true},
+    {"type": "long", "name": "day_of_week", "required": true}, {"type": "long", "name":
+    "hour_of_day", "required": true}, {"type": "long", "name": "DecimalPlaces", "required":
+    true}, {"type": "double", "name": "V_PCA_1", "required": true}, {"type": "double",
+    "name": "V_PCA_2", "required": true}, {"type": "double", "name": "V_PCA_3", "required":
+    true}, {"type": "double", "name": "V_PCA_4", "required": true}, {"type": "double",
+    "name": "V_PCA_5", "required": true}, {"type": "double", "name": "V_PCA_6", "required":
+    true}, {"type": "double", "name": "V_PCA_7", "required": true}, {"type": "double",
+    "name": "V_PCA_8", "required": true}, {"type": "double", "name": "V_PCA_9", "required":
+    true}, {"type": "double", "name": "V_PCA_10", "required": true}, {"type": "double",
+    "name": "V_PCA_11", "required": true}, {"type": "double", "name": "V_PCA_12",
+    "required": true}, {"type": "double", "name": "V_PCA_13", "required": true}, {"type":
+    "double", "name": "uid_day_of_week_TransactionAmt_mean", "required": true}, {"type":
+    "float", "name": "uid_day_of_week_TransactionAmt_rel", "required": true}, {"type":
+    "double", "name": "uid_day_of_week_TransactionAmt_std", "required": true}, {"type":
+    "double", "name": "uid_hour_of_day_TransactionAmt_mean", "required": true}, {"type":
+    "float", "name": "uid_hour_of_day_TransactionAmt_rel", "required": true}, {"type":
+    "double", "name": "uid_hour_of_day_TransactionAmt_std", "required": true}, {"type":
+    "double", "name": "uid_TransactionAmt_mean", "required": true}, {"type": "float",
+    "name": "uid_TransactionAmt_rel", "required": true}, {"type": "double", "name":
+    "uid_TransactionAmt_std", "required": true}, {"type": "double", "name": "uid_C1_mean",
+    "required": true}, {"type": "float", "name": "uid_C1_rel", "required": true},
+    {"type": "double", "name": "uid_C1_std", "required": true}, {"type": "double",
+    "name": "uid_C2_mean", "required": true}, {"type": "float", "name": "uid_C2_rel",
+    "required": true}, {"type": "double", "name": "uid_C2_std", "required": true},
+    {"type": "double", "name": "uid_C3_mean", "required": true}, {"type": "float",
+    "name": "uid_C3_rel", "required": false}, {"type": "double", "name": "uid_C3_std",
+    "required": true}, {"type": "double", "name": "uid_C4_mean", "required": true},
+    {"type": "float", "name": "uid_C4_rel", "required": false}, {"type": "double",
+    "name": "uid_C4_std", "required": true}, {"type": "double", "name": "uid_C5_mean",
+    "required": true}, {"type": "float", "name": "uid_C5_rel", "required": false},
+    {"type": "double", "name": "uid_C5_std", "required": true}, {"type": "double",
+    "name": "uid_C6_mean", "required": true}, {"type": "float", "name": "uid_C6_rel",
+    "required": false}, {"type": "double", "name": "uid_C6_std", "required": true},
+    {"type": "double", "name": "uid_C7_mean", "required": true}, {"type": "float",
+    "name": "uid_C7_rel", "required": false}, {"type": "double", "name": "uid_C7_std",
+    "required": true}, {"type": "double", "name": "uid_C8_mean", "required": true},
+    {"type": "float", "name": "uid_C8_rel", "required": false}, {"type": "double",
+    "name": "uid_C8_std", "required": true}, {"type": "double", "name": "uid_C9_mean",
+    "required": true}, {"type": "float", "name": "uid_C9_rel", "required": false},
+    {"type": "double", "name": "uid_C9_std", "required": true}, {"type": "double",
+    "name": "uid_C10_mean", "required": true}, {"type": "float", "name": "uid_C10_rel",
+    "required": false}, {"type": "double", "name": "uid_C10_std", "required": true},
+    {"type": "double", "name": "uid_C11_mean", "required": true}, {"type": "float",
+    "name": "uid_C11_rel", "required": true}, {"type": "double", "name": "uid_C11_std",
+    "required": true}, {"type": "double", "name": "uid_C12_mean", "required": true},
+    {"type": "float", "name": "uid_C12_rel", "required": false}, {"type": "double",
+    "name": "uid_C12_std", "required": true}, {"type": "double", "name": "uid_C13_mean",
+    "required": true}, {"type": "float", "name": "uid_C13_rel", "required": true},
+    {"type": "double", "name": "uid_C13_std", "required": true}, {"type": "double",
+    "name": "uid_C14_mean", "required": true}, {"type": "float", "name": "uid_C14_rel",
+    "required": true}, {"type": "double", "name": "uid_C14_std", "required": true},
+    {"type": "double", "name": "uid_V_PCA_1_mean", "required": true}, {"type": "float",
+    "name": "uid_V_PCA_1_rel", "required": true}, {"type": "double", "name": "uid_V_PCA_1_std",
+    "required": true}, {"type": "double", "name": "uid_V_PCA_2_mean", "required":
+    true}, {"type": "float", "name": "uid_V_PCA_2_rel", "required": true}, {"type":
+    "double", "name": "uid_V_PCA_2_std", "required": true}, {"type": "double", "name":
+    "uid_V_PCA_3_mean", "required": true}, {"type": "float", "name": "uid_V_PCA_3_rel",
+    "required": true}, {"type": "double", "name": "uid_V_PCA_3_std", "required": true},
+    {"type": "double", "name": "uid_V_PCA_4_mean", "required": true}, {"type": "float",
+    "name": "uid_V_PCA_4_rel", "required": true}, {"type": "double", "name": "uid_V_PCA_4_std",
+    "required": true}, {"type": "double", "name": "uid_V_PCA_5_mean", "required":
+    true}, {"type": "float", "name": "uid_V_PCA_5_rel", "required": true}, {"type":
+    "double", "name": "uid_V_PCA_5_std", "required": true}, {"type": "double", "name":
+    "uid_V_PCA_6_mean", "required": true}, {"type": "float", "name": "uid_V_PCA_6_rel",
+    "required": true}, {"type": "double", "name": "uid_V_PCA_6_std", "required": true},
+    {"type": "double", "name": "uid_V_PCA_7_mean", "required": true}, {"type": "float",
+    "name": "uid_V_PCA_7_rel", "required": true}, {"type": "double", "name": "uid_V_PCA_7_std",
+    "required": true}, {"type": "double", "name": "uid_V_PCA_8_mean", "required":
+    true}, {"type": "float", "name": "uid_V_PCA_8_rel", "required": true}, {"type":
+    "double", "name": "uid_V_PCA_8_std", "required": true}, {"type": "double", "name":
+    "uid_V_PCA_9_mean", "required": true}, {"type": "float", "name": "uid_V_PCA_9_rel",
+    "required": true}, {"type": "double", "name": "uid_V_PCA_9_std", "required": true},
+    {"type": "double", "name": "uid_V_PCA_10_mean", "required": true}, {"type": "float",
+    "name": "uid_V_PCA_10_rel", "required": true}, {"type": "double", "name": "uid_V_PCA_10_std",
+    "required": true}, {"type": "double", "name": "uid_V_PCA_11_mean", "required":
+    true}, {"type": "float", "name": "uid_V_PCA_11_rel", "required": true}, {"type":
+    "double", "name": "uid_V_PCA_11_std", "required": true}, {"type": "double", "name":
+    "uid_V_PCA_12_mean", "required": true}, {"type": "float", "name": "uid_V_PCA_12_rel",
+    "required": true}, {"type": "double", "name": "uid_V_PCA_12_std", "required":
+    true}, {"type": "double", "name": "uid_V_PCA_13_mean", "required": true}, {"type":
+    "float", "name": "uid_V_PCA_13_rel", "required": true}, {"type": "double", "name":
+    "uid_V_PCA_13_std", "required": true}, {"type": "float", "name": "uid_ProductCD_ct",
+    "required": true}, {"type": "float", "name": "uid_ProductCD_freq", "required":
+    true}, {"type": "float", "name": "uid_card4_ct", "required": true}, {"type": "float",
+    "name": "uid_card4_freq", "required": true}, {"type": "float", "name": "uid_card6_ct",
+    "required": true}, {"type": "float", "name": "uid_card6_freq", "required": true},
+    {"type": "float", "name": "uid_P_emaildomain_ct", "required": true}, {"type":
+    "float", "name": "uid_P_emaildomain_freq", "required": true}, {"type": "float",
+    "name": "uid_R_emaildomain_ct", "required": true}, {"type": "float", "name": "uid_R_emaildomain_freq",
+    "required": true}, {"type": "float", "name": "uid_M1_ct", "required": true}, {"type":
+    "float", "name": "uid_M1_freq", "required": true}, {"type": "float", "name": "uid_M2_ct",
+    "required": true}, {"type": "float", "name": "uid_M2_freq", "required": true},
+    {"type": "float", "name": "uid_M3_ct", "required": true}, {"type": "float", "name":
+    "uid_M3_freq", "required": true}, {"type": "float", "name": "uid_M4_ct", "required":
+    true}, {"type": "float", "name": "uid_M4_freq", "required": true}, {"type": "float",
+    "name": "uid_M5_ct", "required": true}, {"type": "float", "name": "uid_M5_freq",
+    "required": true}, {"type": "float", "name": "uid_M6_ct", "required": true}, {"type":
+    "float", "name": "uid_M6_freq", "required": true}, {"type": "float", "name": "uid_M7_ct",
+    "required": true}, {"type": "float", "name": "uid_M7_freq", "required": true},
+    {"type": "float", "name": "uid_M8_ct", "required": true}, {"type": "float", "name":
+    "uid_M8_freq", "required": true}, {"type": "float", "name": "uid_M9_ct", "required":
+    true}, {"type": "float", "name": "uid_M9_freq", "required": true}, {"type": "float",
+    "name": "uid_id_23_ct", "required": true}, {"type": "float", "name": "uid_id_23_freq",
+    "required": true}, {"type": "float", "name": "uid_id_30_ct", "required": true},
+    {"type": "float", "name": "uid_id_30_freq", "required": true}, {"type": "float",
+    "name": "uid_id_31_ct", "required": true}, {"type": "float", "name": "uid_id_31_freq",
+    "required": true}, {"type": "float", "name": "uid_id_33_ct", "required": true},
+    {"type": "float", "name": "uid_id_33_freq", "required": true}, {"type": "float",
+    "name": "uid_id_34_ct", "required": true}, {"type": "float", "name": "uid_id_34_freq",
+    "required": true}, {"type": "float", "name": "uid_DeviceType_ct", "required":
+    true}, {"type": "float", "name": "uid_DeviceType_freq", "required": true}, {"type":
+    "float", "name": "uid_DeviceInfo_ct", "required": true}, {"type": "float", "name":
+    "uid_DeviceInfo_freq", "required": true}, {"type": "double", "name": "TransactionAmt_Scaled",
+    "required": true}]'
+  outputs: '[{"type": "long", "required": true}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2025-10-19 16:08:20.938524'
