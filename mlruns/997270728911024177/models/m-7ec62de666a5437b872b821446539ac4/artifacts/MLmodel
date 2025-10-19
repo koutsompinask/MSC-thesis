@@ -1,0 +1,22 @@
+artifact_path: file:///c:/Developer/MSC-thesis/mlruns/997270728911024177/models/m-7ec62de666a5437b872b821446539ac4/artifacts
+flavors:
+  python_function:
+    data: model.xgb
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.xgboost
+    python_version: 3.12.9
+  xgboost:
+    code: null
+    data: model.xgb
+    model_class: xgboost.sklearn.XGBClassifier
+    model_format: xgb
+    xgb_version: 3.0.0
+mlflow_version: 3.5.0
+model_id: m-7ec62de666a5437b872b821446539ac4
+model_size_bytes: 47441398
+model_uuid: m-7ec62de666a5437b872b821446539ac4
+prompts: null
+run_id: 6c7b1607ddc84d72b1d40b0921dc4132
+utc_time_created: '2025-10-19 01:00:01.008414'
