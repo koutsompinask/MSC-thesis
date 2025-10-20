@@ -271,10 +271,14 @@ def train_xgb_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
             "eval_metric": "aucpr",
             "n_jobs": -1
         }
-        model = xgb.XGBClassifier(**params,  early_stopping_rounds=early_stopping_rounds)
-        model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
-        y_pred = model.predict_proba(X_va)[:, 1]
-        score = average_precision_score(y_va, y_pred)
+        try:
+            model = xgb.XGBClassifier(**params,  early_stopping_rounds=early_stopping_rounds)
+            model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
+            y_pred = model.predict_proba(X_va)[:, 1]
+            score = average_precision_score(y_va, y_pred)
+        except Exception as e:
+            score = 0.0
+            print(f"[WARN] Trial {trial.number} failed with error: {e}")
         pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={score:.4f}")
         pbar.update(1)
         return score
@@ -312,12 +316,18 @@ def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
             "verbose": False
         }
         model = CatBoostClassifier(**params)
-        model.fit(X_tr, y_tr, eval_set=(X_va, y_va),
-                  cat_features=cat_features,
-                  early_stopping_rounds=early_stopping_rounds,
-                  verbose=False)
-        y_pred = model.predict_proba(X_va)[:, 1]
-        score = average_precision_score(y_va, y_pred)
+        try:
+            model.fit(X_tr, y_tr, eval_set=(X_va, y_va),
+                    cat_features=cat_features,
+                    early_stopping_rounds=early_stopping_rounds,
+                    verbose=False)
+            y_pred = model.predict_proba(X_va)[:, 1]
+            score = average_precision_score(y_va, y_pred)
+        except Exception as e:
+            score = 0.0
+            print(f"[WARN] Trial {trial.number} failed with error: {e}")
+        pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={score:.4f}")
+        pbar.update(1)
         return score
 
     study = optuna.create_study(direction="maximize", study_name="catboost_pr_auc_optimization")
@@ -368,15 +378,12 @@ def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
                     callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)])
             y_pred = model.predict_proba(X_va)[:, 1]
             score = average_precision_score(y_va, y_pred)
-            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={score:.4f}")
-            pbar.update(1)
-            return score
         except Exception as e:
             score = 0.0
-            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={score:.4f}")
-            pbar.update(1)
             print(f"[WARN] Trial {trial.number} failed with error: {e}")
-            return score
+        pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={score:.4f}")
+        pbar.update(1)
+        return score
 
     study = optuna.create_study(direction="maximize", study_name="lgbm_pr_auc_optimization")
     with tqdm(total=n_trials, desc="[Optuna LightGBM Tuning]", unit="trial") as pbar:
