@@ -40,10 +40,17 @@ from catboost import CatBoostClassifier
 import xgboost as xgb
 import lightgbm as lgb
 from tqdm.auto import tqdm
-from typing import Any, Dict, Optional, Tuple
 import tempfile
 
 def _gpu_available() -> bool:
+    """Check if GPU is available for XGBoost training.
+    
+    Attempts to create and fit a minimal XGBoost model with GPU acceleration.
+    If successful, GPU is available; otherwise, falls back to CPU.
+    
+    Returns:
+        bool: True if GPU is available and working, False otherwise.
+    """
     try:
         # Attempt a tiny GPU-boosted fit; if it fails, fall back to CPU
         clf = xgb.XGBClassifier(
@@ -59,9 +66,23 @@ def _gpu_available() -> bool:
 
 
 
-def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path) -> Dict[str, Path]:
+def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path) -> dict[str, Path]:
+    """Generate evaluation plots and save them to disk.
+    
+    Creates ROC curve, Precision-Recall curve, and confusion matrix plots
+    for model evaluation and saves them as PNG files.
+    
+    Args:
+        y_true: True binary labels (0 or 1).
+        y_prob: Predicted probabilities for the positive class.
+        out_dir: Directory path where plots will be saved.
+        
+    Returns:
+        dict[str, Path]: Dictionary mapping plot names to file paths.
+            Keys: 'roc_curve', 'pr_curve', 'confusion_matrix'
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
-    paths: Dict[str, Path] = {}
+    paths: dict[str, Path] = {}
 
     # ROC
     fpr, tpr, _ = roc_curve(y_true, y_prob)
@@ -130,11 +151,24 @@ def evaluate_and_log(
     best_params: dict | None = None,
     tracking_uri: str = "mlruns"
 ):
-    """
-    Evaluate a trained binary classifier and log results to MLflow.
-    Includes metrics, SHAP explainability, calibration, and confusion matrix.
-
-    Works with: XGBoost, CatBoost, LightGBM, or any sklearn-style model.
+    """Evaluate a trained binary classifier and log results to MLflow.
+    
+    Performs comprehensive evaluation including metrics calculation, SHAP explainability,
+    calibration analysis, and visualization generation. Results are logged to MLflow
+    with artifacts, metrics, and model storage.
+    
+    Args:
+        model: Trained binary classifier (XGBoost, CatBoost, LightGBM, or sklearn-style).
+        X_va: Validation features as pandas DataFrame.
+        y_va: Validation labels as pandas Series.
+        experiment_name: MLflow experiment name.
+        run_name: MLflow run name.
+        model_type: Model type string. If None, auto-detects from model class.
+        best_params: Dictionary of best hyperparameters to log.
+        tracking_uri: MLflow tracking URI (default: "mlruns").
+        
+    Returns:
+        dict: Dictionary containing evaluation metrics (roc_auc, pr_auc, precision, recall, f1).
     """
     # --- Detect model type automatically if not provided ---
     if model_type is None:
@@ -255,6 +289,27 @@ def evaluate_and_log(
 # ---------------------------
 def train_xgb_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
                      early_stopping_rounds=50, use_gpu=True):
+    """Train XGBoost classifier with Optuna hyperparameter optimization.
+    
+    Performs hyperparameter tuning using Optuna TPE sampler to optimize
+    PR-AUC score. Uses early stopping and GPU acceleration when available.
+    
+    Args:
+        X: Training features (pandas DataFrame or numpy array).
+        y: Training labels (pandas Series or numpy array).
+        val_size: Fraction of data to use for validation (default: 0.2).
+        n_trials: Number of Optuna trials for hyperparameter search (default: 30).
+        random_state: Random seed for reproducibility (default: 42).
+        early_stopping_rounds: Early stopping rounds for XGBoost (default: 50).
+        use_gpu: Whether to use GPU acceleration if available (default: True).
+        
+    Returns:
+        tuple: (best_model, best_params, X_va, y_va)
+            - best_model: Trained XGBoost classifier with best parameters
+            - best_params: Dictionary of best hyperparameters found
+            - X_va: Validation features
+            - y_va: Validation labels
+    """
     X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
 
     def objective(trial):
@@ -299,6 +354,28 @@ def train_xgb_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
 
 def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
                           early_stopping_rounds=50, use_gpu=True):
+    """Train CatBoost classifier with Optuna hyperparameter optimization.
+    
+    Performs hyperparameter tuning using Optuna TPE sampler to optimize
+    PR-AUC score. Handles categorical features automatically and uses
+    GPU acceleration when available.
+    
+    Args:
+        X: Training features (pandas DataFrame or numpy array).
+        y: Training labels (pandas Series or numpy array).
+        val_size: Fraction of data to use for validation (default: 0.2).
+        n_trials: Number of Optuna trials for hyperparameter search (default: 30).
+        random_state: Random seed for reproducibility (default: 42).
+        early_stopping_rounds: Early stopping rounds for CatBoost (default: 50).
+        use_gpu: Whether to use GPU acceleration if available (default: True).
+        
+    Returns:
+        tuple: (best_model, best_params, X_va, y_va)
+            - best_model: Trained CatBoost classifier with best parameters
+            - best_params: Dictionary of best hyperparameters found
+            - X_va: Validation features
+            - y_va: Validation labels
+    """
     X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
     cat_features = [i for i, c in enumerate(X_tr.columns) if str(X_tr[c].dtype) in ["object", "category"]]
 
@@ -351,6 +428,27 @@ def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
 
 def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
                       early_stopping_rounds=50, use_gpu=True):
+    """Train LightGBM classifier with Optuna hyperparameter optimization.
+    
+    Performs hyperparameter tuning using Optuna TPE sampler to optimize
+    PR-AUC score. Uses early stopping and GPU acceleration when available.
+    
+    Args:
+        X: Training features (pandas DataFrame or numpy array).
+        y: Training labels (pandas Series or numpy array).
+        val_size: Fraction of data to use for validation (default: 0.2).
+        n_trials: Number of Optuna trials for hyperparameter search (default: 30).
+        random_state: Random seed for reproducibility (default: 42).
+        early_stopping_rounds: Early stopping rounds for LightGBM (default: 50).
+        use_gpu: Whether to use GPU acceleration if available (default: True).
+        
+    Returns:
+        tuple: (best_model, best_params, X_va, y_va)
+            - best_model: Trained LightGBM classifier with best parameters
+            - best_params: Dictionary of best hyperparameters found
+            - X_va: Validation features
+            - y_va: Validation labels
+    """
     X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
 
     def objective(trial):
