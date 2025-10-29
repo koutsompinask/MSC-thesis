@@ -149,7 +149,9 @@ def evaluate_and_log(
     run_name: str,
     model_type: str | None = None,
     best_params: dict | None = None,
-    tracking_uri: str = "mlruns"
+    tracking_uri: str = "mlruns",
+    hp_search_history: pd.DataFrame | None = None,
+    hp_search_plots: list[Path] | None = None,
 ):
     """Evaluate a trained binary classifier and log results to MLflow.
     
@@ -166,6 +168,8 @@ def evaluate_and_log(
         model_type: Model type string. If None, auto-detects from model class.
         best_params: Dictionary of best hyperparameters to log.
         tracking_uri: MLflow tracking URI (default: "mlruns").
+        hp_search_history: Optional DataFrame of hyperparameter search history.
+        hp_search_plots: Optional list of Paths to hyperparameter search diagnostic plots.
         
     Returns:
         dict: Dictionary containing evaluation metrics (roc_auc, pr_auc, precision, recall, f1).
@@ -215,7 +219,7 @@ def evaluate_and_log(
         artifacts_dir = Path(td)
         plot_paths = _plot_artifacts(y_va, y_prob, artifacts_dir / "plots")
         for name, path in plot_paths.items():
-            mlflow.log_artifact(str(path), artifact_path="plots")
+            mlf.log_artifact(str(path), artifact_path="plots")
 
         # --- SHAP Explainability ---
         try:
@@ -279,10 +283,74 @@ def evaluate_and_log(
                     mlf_sklearn.log_model(model, name="model", input_example=input_example)
             except Exception as e:
                 print(f"[WARN] Could not log model: {e}")
+        
+        if hp_search_history is not None:
+            # save the full trial history as csv
+            hp_dir = Path("hp_search_artifacts")
+            hp_dir.mkdir(parents=True, exist_ok=True)
+            hist_path = hp_dir / "optuna_trials.csv"
+            hp_search_history.to_csv(hist_path, index=False)
+            mlf.log_artifact(str(hist_path), artifact_path="hp_search")
+
+            # also log summary stats for convenience
+            mlf.log_metric("hp_best_score", float(hp_search_history["score"].max()))
+            mlf.log_metric("hp_avg_score", float(hp_search_history["score"].mean()))
+            mlf.log_metric("hp_std_score", float(hp_search_history["score"].std()))
+
+        if hp_search_plots:
+            for p in hp_search_plots:
+                mlf.log_artifact(str(p), artifact_path="hp_search")
 
         print("[INFO] Evaluation complete and logged.")
     return metrics
 
+def plot_param_vs_score(df: pd.DataFrame, param_name: str, out_dir: Path, metric_name: str = "score"):
+    """
+    Generate a diagnostic plot of model score vs hyperparameter value.
+    Saves the plot to disk and returns the path.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Trial history DataFrame containing at least [param_name, metric_name].
+    param_name : str
+        Name of the hyperparameter column to plot.
+    out_dir : pathlib.Path
+        Directory to save the resulting plot.
+    metric_name : str
+        Name of the metric column in df (default: 'score').
+
+    Returns
+    -------
+    Path or None
+        Path to the saved PNG file, or None if column missing.
+    """
+    if param_name not in df.columns:
+        return None
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    plt.figure()
+    col_type = df[param_name].dtype.kind
+    if col_type in ("i", "O", "b"):  # integer, object, boolean
+        grouped = df.groupby(param_name)[metric_name].mean().reset_index()
+        grouped = grouped.sort_values(param_name)
+        plt.bar(grouped[param_name].astype(str), grouped[metric_name], color="#1f77b4")
+        plt.xlabel(param_name)
+        plt.ylabel(metric_name)
+        plt.title(f"{metric_name} vs {param_name} (binned mean)")
+        plt.xticks(rotation=45, ha="right")
+    else:
+        plt.scatter(df[param_name], df[metric_name], color="#1f77b4", alpha=0.7, s=40)
+        plt.xlabel(param_name)
+        plt.ylabel(metric_name)
+        plt.title(f"{metric_name} vs {param_name}")
+    plt.tight_layout()
+
+    out_path = out_dir / f"{param_name}_vs_{metric_name}.png"
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    return out_path
 
 # ---------------------------
 #  MODEL-SPECIFIC TRAINING
@@ -309,9 +377,13 @@ def train_xgb_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
             - best_params: Dictionary of best hyperparameters found
             - X_va: Validation features
             - y_va: Validation labels
+            - hist_df: DataFrame of hyperparameter trial history
+            - plot_paths: List of Paths to diagnostic plots
     """
     X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
 
+    trial_history = []  # we'll collect params and scores here
+    
     def objective(trial):
         params = {
             "n_estimators": 500,
@@ -331,25 +403,43 @@ def train_xgb_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
             model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
             y_pred = model.predict_proba(X_va)[:, 1]
             score = average_precision_score(y_va, y_pred)
+            # record params + score for later plotting
+            rec = params.copy()
+            rec["score"] = score
+            rec["trial_number"] = trial.number
+            trial_history.append(rec)
         except Exception as e:
             score = 0.0
             print(f"[WARN] Trial {trial.number} failed with error: {e}")
-        pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={score:.4f}")
-        pbar.update(1)
         return score
 
     study = optuna.create_study(direction="maximize", study_name="xgboost_pr_auc_optimization")
     with tqdm(total=n_trials, desc="[Optuna XGBoost Tuning]", unit="trial") as pbar:
         def _tqdm_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
             pbar.update(1)
-            print(f"[RUN] Trial {trial.number}: value={trial.value:.5f}")
+            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={trial.value:.4f}")
         study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], show_progress_bar=False, gc_after_trial=True)
     best_params = study.best_params
     print(f"[INFO] Best XGBoost params: {best_params}")
 
     best_model = xgb.XGBClassifier(**best_params,  early_stopping_rounds=early_stopping_rounds)
     best_model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
-    return best_model, best_params, X_va, y_va
+
+    # -----------------
+    # Build history df + plots
+    # -----------------
+    hist_df = pd.DataFrame(trial_history)
+    plots_dir = Path("hp_search_plots/xgb")
+    plot_paths = []
+    for p in ["learning_rate", "max_depth", "subsample", "colsample_bytree",
+              "min_child_weight", "gamma"]:
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+
+    return best_model, best_params, X_va, y_va, hist_df, plot_paths
+
+
 
 
 def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
@@ -375,9 +465,13 @@ def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
             - best_params: Dictionary of best hyperparameters found
             - X_va: Validation features
             - y_va: Validation labels
+            - hist_df: DataFrame of hyperparameter trial history
+            - plot_paths: List of Paths to diagnostic plots
     """
     X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
     cat_features = [i for i, c in enumerate(X_tr.columns) if str(X_tr[c].dtype) in ["object", "category"]]
+
+    trial_history = []  # we'll collect params and scores here
 
     def objective(trial):
         params = {
@@ -400,18 +494,21 @@ def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
                     verbose=False)
             y_pred = model.predict_proba(X_va)[:, 1]
             score = average_precision_score(y_va, y_pred)
+            # record params + score for later plotting
+            rec = params.copy()
+            rec["score"] = score
+            rec["trial_number"] = trial.number
+            trial_history.append(rec)
         except Exception as e:
             score = 0.0
             print(f"[WARN] Trial {trial.number} failed with error: {e}")
-        pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={score:.4f}")
-        pbar.update(1)
         return score
 
     study = optuna.create_study(direction="maximize", study_name="catboost_pr_auc_optimization")
     with tqdm(total=n_trials, desc="[Optuna CatBoost Tuning]", unit="trial") as pbar:
         def _tqdm_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
             pbar.update(1)
-            print(f"[RUN] Trial {trial.number}: value={trial.value:.5f}")
+            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={trial.value:.4f}")
         study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], show_progress_bar=False, gc_after_trial=True)
     best_params = study.best_params
     print(f"[INFO] Best CatBoost params: {best_params}")
@@ -424,7 +521,18 @@ def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
                    cat_features=cat_features,
                    early_stopping_rounds=early_stopping_rounds,
                    verbose=False)
-    return best_model, best_params, X_va, y_va
+        # -----------------
+    # Build history df + plots
+    # -----------------
+    hist_df = pd.DataFrame(trial_history)
+    plots_dir = Path("hp_search_plots/cat")
+    plot_paths = []
+    for p in ["learning_rate", "depth", "subsample", "l2_leaf_reg", "border_count"]:
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+
+    return best_model, best_params, X_va, y_va, hist_df, plot_paths
 
 def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
                       early_stopping_rounds=50, use_gpu=True):
@@ -448,9 +556,13 @@ def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
             - best_params: Dictionary of best hyperparameters found
             - X_va: Validation features
             - y_va: Validation labels
+            - hist_df: DataFrame of hyperparameter trial history
+            - plot_paths: List of Paths to diagnostic plots
     """
     X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
 
+    trial_history = []  # we'll collect params and scores here
+    
     def objective(trial):
         params = {
             "objective": "binary",
@@ -476,18 +588,22 @@ def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
                     callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)])
             y_pred = model.predict_proba(X_va)[:, 1]
             score = average_precision_score(y_va, y_pred)
+            # record params + score for later plotting
+            rec = params.copy()
+            rec["score"] = score
+            rec["trial_number"] = trial.number
+            trial_history.append(rec)
         except Exception as e:
             score = 0.0
             print(f"[WARN] Trial {trial.number} failed with error: {e}")
-        pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={score:.4f}")
-        pbar.update(1)
+
         return score
 
     study = optuna.create_study(direction="maximize", study_name="lgbm_pr_auc_optimization")
     with tqdm(total=n_trials, desc="[Optuna LightGBM Tuning]", unit="trial") as pbar:
         def _tqdm_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
             pbar.update(1)
-            print(f"[RUN] Trial {trial.number}: value={trial.value:.5f}")
+            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={trial.value:.4f}")
         study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], show_progress_bar=False, gc_after_trial=True)
     best_params = study.best_params
     print(f"[INFO] Best LightGBM params: {best_params}")
@@ -497,4 +613,17 @@ def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
                    eval_set=[(X_va, y_va)],
                    eval_metric="average_precision",
                    callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)])
-    return best_model, best_params, X_va, y_va
+    
+    # -----------------
+    # Build history df + plots
+    # -----------------
+    hist_df = pd.DataFrame(trial_history)
+    plots_dir = Path("hp_search_plots/lgbm")
+    plot_paths = []
+    for p in ["learning_rate", "max_depth", "num_leaves", "feature_fraction",
+              "bagging_fraction", "bagging_freq", "min_child_samples", "lambda_l1", "lambda_l2"]:
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+
+    return best_model, best_params, X_va, y_va, hist_df, plot_paths
