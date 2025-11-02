@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 import shap
 import optuna
 import mlflow as mlf
-import mlflow.xgboost as mlf_xgboost, mlflow.catboost as mlf_catboost, mlflow.lightgbm as mlf_lightgbm, mlflow.sklearn as mlf_sklearn
+import mlflow.xgboost as mlf_xgboost, mlflow.catboost as mlf_catboost, mlflow.lightgbm as mlf_lightgbm, mlflow.sklearn as mlf_sklearn, mlflow.pytorch as mlf_pytorch
 from pathlib import Path
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
@@ -41,6 +41,10 @@ import xgboost as xgb
 import lightgbm as lgb
 from tqdm.auto import tqdm
 import tempfile
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import TensorDataset, DataLoader
 
 def _gpu_available() -> bool:
     """Check if GPU is available for XGBoost training.
@@ -183,6 +187,8 @@ def evaluate_and_log(
             model_type = "catboost"
         elif "lgb" in cname:
             model_type = "lightgbm"
+        elif "simplenn" in cname or "module" in cname:
+            model_type = "nn"
         else:
             model_type = "sklearn"
 
@@ -197,7 +203,21 @@ def evaluate_and_log(
                 mlf.log_param(k, v)
 
         # --- Predictions ---
-        if hasattr(model, "predict_proba"):
+        if model_type == "nn":
+            # Neural network models need scaled input as tensors
+            # The scaler should be attached to the model when returned from train_nn_optuna
+            if hasattr(model, "scaler"):
+                X_va_scaled = model.scaler.transform(X_va)
+            else:
+                # If no scaler attached, assume X_va is already scaled (fallback)
+                X_va_scaled = X_va.values if hasattr(X_va, "values") else X_va
+            X_va_t = torch.tensor(X_va_scaled, dtype=torch.float32)
+            device = next(model.parameters()).device
+            model.eval()
+            with torch.no_grad():
+                logits = model(X_va_t.to(device))
+                y_prob = torch.sigmoid(logits).cpu().numpy().flatten()
+        elif hasattr(model, "predict_proba"):
             y_prob = model.predict_proba(X_va)[:, 1]
         else:
             y_prob = model.predict(X_va)
@@ -279,6 +299,8 @@ def evaluate_and_log(
                     mlf_catboost.log_model(model, name="model", input_example=input_example)
                 elif model_type == "lightgbm":
                     mlf_lightgbm.log_model(model, name="model", input_example=input_example)
+                elif model_type == "nn":
+                    mlf_pytorch.log_model(model, name="model", input_example=input_example)
                 else:
                     mlf_sklearn.log_model(model, name="model", input_example=input_example)
             except Exception as e:
@@ -627,3 +649,233 @@ def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
             plot_paths.append(path_maybe)
 
     return best_model, best_params, X_va, y_va, hist_df, plot_paths
+
+
+class SimpleNN(nn.Module):
+    def __init__(self, input_dim, n_layers, hidden_dim, activation_fn, dropout=0.0):
+        super().__init__()
+        layers = []
+        act_layer = {
+            "relu": nn.ReLU(),
+            "leakyrelu": nn.LeakyReLU(0.1),
+            "tanh": nn.Tanh(),
+            "sigmoid": nn.Sigmoid(),
+        }[activation_fn]
+
+        last_dim = input_dim
+        for _ in range(n_layers):
+            layers.append(nn.Linear(last_dim, hidden_dim))
+            layers.append(act_layer)
+            if dropout > 0.0:
+                layers.append(nn.Dropout(dropout))
+            last_dim = hidden_dim
+        layers.append(nn.Linear(last_dim, 1))
+        # Don't add sigmoid here - we'll use BCEWithLogitsLoss which is more stable
+        self.model = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.model(x)
+    
+    def predict_proba(self, x):
+        """Predict probabilities by applying sigmoid to logits."""
+        with torch.no_grad():
+            logits = self.forward(x)
+            return torch.sigmoid(logits).cpu().numpy()
+
+
+def train_nn_optuna(
+    X,
+    y,
+    val_size=0.2,
+    n_trials=30,
+    random_state=42,
+    max_epochs=30,
+    batch_size=512,
+    device=None,
+):
+    """Train a simple feedforward neural network with Optuna hyperparameter tuning.
+
+    Args:
+        X: Training features (pandas DataFrame or numpy array).
+        y: Training labels (pandas Series or numpy array).
+        val_size: Fraction of data for validation.
+        n_trials: Number of Optuna trials.
+        random_state: Random seed.
+        max_epochs: Maximum training epochs.
+        batch_size: Mini-batch size.
+        device: 'cuda' or 'cpu'. Auto-detects if None.
+
+    Returns:
+        tuple: (best_model, best_params, X_va, y_va, hist_df, plot_paths, scaler)
+            - best_model: Trained neural network model
+            - best_params: Dictionary of best hyperparameters found
+            - X_va: Validation features (original, unscaled)
+            - y_va: Validation labels
+            - hist_df: DataFrame of hyperparameter trial history
+            - plot_paths: List of Paths to diagnostic plots
+            - scaler: StandardScaler fitted on training data (needed for evaluation)
+    """
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import average_precision_score
+    from sklearn.preprocessing import StandardScaler
+
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
+
+    # Normalize features for neural network training
+    scaler = StandardScaler()
+    X_tr_scaled = scaler.fit_transform(X_tr)
+    X_va_scaled = scaler.transform(X_va)
+
+    X_tr_t = torch.tensor(X_tr_scaled, dtype=torch.float32)
+    y_tr_t = torch.tensor(y_tr.values, dtype=torch.float32).unsqueeze(1)
+    X_va_t = torch.tensor(X_va_scaled, dtype=torch.float32)
+    y_va_t = torch.tensor(y_va.values, dtype=torch.float32).unsqueeze(1)
+
+    train_ds = TensorDataset(X_tr_t, y_tr_t)
+    val_ds = TensorDataset(X_va_t, y_va_t)
+
+    trial_history = []
+
+    def objective(trial):
+        n_layers = trial.suggest_int("n_layers", 1, 4)
+        hidden_dim = trial.suggest_int("hidden_dim", 32, 512, log=True)
+        activation = trial.suggest_categorical("activation", ["relu", "leakyrelu", "tanh", "sigmoid"])
+        lr = trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True)
+        dropout = trial.suggest_float("dropout", 0.0, 0.5)
+
+        model = SimpleNN(X_tr_t.shape[1], n_layers, hidden_dim, activation, dropout).to(device)
+        criterion = nn.BCEWithLogitsLoss()  # More numerically stable than BCELoss + Sigmoid
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+        best_val_loss = float("inf")
+        patience, patience_counter = 5, 0
+
+        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
+
+        # Initialize validation predictions and labels
+        val_preds = []
+        val_true = []
+
+        for epoch in range(max_epochs):
+            model.train()
+            for xb, yb in train_loader:
+                xb, yb = xb.to(device), yb.to(device)
+                optimizer.zero_grad()
+                logits = model(xb)
+                # Check for NaN/Inf in logits
+                if torch.any(torch.isnan(logits)) or torch.any(torch.isinf(logits)):
+                    return 0.0
+                # Ensure targets are in valid range [0, 1]
+                yb_clamped = torch.clamp(yb, min=0.0, max=1.0)
+                loss = criterion(logits, yb_clamped)
+                # Check for invalid loss values
+                if torch.isnan(loss) or torch.isinf(loss):
+                    return 0.0
+                loss.backward()
+                optimizer.step()
+
+            # validation
+            model.eval()
+            with torch.no_grad():
+                val_preds_epoch = []
+                val_true_epoch = []
+                for xb, yb in val_loader:
+                    xb = xb.to(device)
+                    # Get logits, apply sigmoid to get probabilities
+                    logits = model(xb)
+                    preds = torch.sigmoid(logits).cpu().numpy()
+                    val_preds_epoch.extend(preds.flatten())
+                    val_true_epoch.extend(yb.numpy().flatten())
+
+                val_loss = np.mean((np.array(val_preds_epoch) - np.array(val_true_epoch)) ** 2)
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                    # Update best validation predictions
+                    val_preds = val_preds_epoch.copy()
+                    val_true = val_true_epoch.copy()
+                else:
+                    patience_counter += 1
+                if patience_counter >= patience:
+                    break
+
+        # Use stored best validation predictions for PR-AUC
+        if len(val_preds) == 0:
+            # Fallback: collect all validation predictions if early stopping happened before any update
+            model.eval()
+            with torch.no_grad():
+                val_preds = []
+                val_true = []
+                for xb, yb in val_loader:
+                    xb = xb.to(device)
+                    # Get logits, apply sigmoid to get probabilities
+                    logits = model(xb)
+                    preds = torch.sigmoid(logits).cpu().numpy()
+                    val_preds.extend(preds.flatten())
+                    val_true.extend(yb.numpy().flatten())
+
+        # compute PR-AUC
+        pr_auc = average_precision_score(val_true, val_preds)
+
+        # record params
+        rec = {
+            "trial_number": trial.number,
+            "score": pr_auc,
+            "n_layers": n_layers,
+            "hidden_dim": hidden_dim,
+            "activation": activation,
+            "learning_rate": lr,
+            "dropout": dropout,
+        }
+        trial_history.append(rec)
+        return pr_auc
+
+    study = optuna.create_study(direction="maximize", study_name="nn_pr_auc_optimization")
+    with tqdm(total=n_trials, desc="[Optuna NN Tuning]", unit="trial") as pbar:
+        def _tqdm_cb(study, trial):
+            pbar.update(1)
+            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={trial.value:.4f}")
+        study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], gc_after_trial=True)
+
+    best_params = study.best_params
+    print(f"[INFO] Best NN params: {best_params}")
+
+    # Train best model fully
+    dropout = best_params.get("dropout", 0.0)
+    model = SimpleNN(X_tr_t.shape[1], best_params["n_layers"], best_params["hidden_dim"], 
+                     best_params["activation"], dropout).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=best_params["learning_rate"])
+    criterion = nn.BCEWithLogitsLoss()  # More numerically stable
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+
+    for epoch in range(max_epochs):
+        model.train()
+        for xb, yb in train_loader:
+            xb, yb = xb.to(device), yb.to(device)
+            optimizer.zero_grad()
+            logits = model(xb)
+            # Check for NaN/Inf
+            if torch.any(torch.isnan(logits)) or torch.any(torch.isinf(logits)):
+                print(f"[WARN] Invalid logits detected in final training, skipping epoch {epoch}")
+                continue
+            yb_clamped = torch.clamp(yb, min=0.0, max=1.0)
+            loss = criterion(logits, yb_clamped)
+            if torch.isnan(loss) or torch.isinf(loss):
+                print(f"[WARN] Invalid loss detected in final training, skipping epoch {epoch}")
+                continue
+            loss.backward()
+            optimizer.step()
+
+    hist_df = pd.DataFrame(trial_history)
+    plots_dir = Path("hp_search_plots/nn")
+    plot_paths = []
+    for p in ["n_layers", "hidden_dim", "activation", "learning_rate", "dropout"]:
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
+        if path_maybe:
+            plot_paths.append(path_maybe)
+
+    # Attach scaler to model for convenience (optional, for evaluate_and_log)
+    model.scaler = scaler
+    
+    return model, best_params, X_va, y_va, hist_df, plot_paths, scaler
