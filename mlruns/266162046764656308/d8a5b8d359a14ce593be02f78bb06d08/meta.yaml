@@ -1,8 +1,9 @@
 artifact_uri: file:c:/Developer/MSC-thesis/mlruns/266162046764656308/d8a5b8d359a14ce593be02f78bb06d08/artifacts
+deleted_time: 1762355254420
 end_time: 1761674865068
 entry_point_name: ''
 experiment_id: '266162046764656308'
-lifecycle_stage: active
+lifecycle_stage: deleted
 run_id: d8a5b8d359a14ce593be02f78bb06d08
 run_name: LightGBM_Optuna_fullfeatures
 source_name: ''
