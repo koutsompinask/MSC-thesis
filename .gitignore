@@ -2,3 +2,4 @@
 /ieee-fraud-detection-data
 /ai-gen
 *.pyc
+mlruns/**/models/**

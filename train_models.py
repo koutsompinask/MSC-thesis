@@ -64,6 +64,10 @@ def _gpu_available() -> bool:
     except Exception:
         return False
 
+def _scale_pos_weight(y: np.ndarray) -> float:
+    pos = np.sum(y == 1)
+    neg = np.sum(y == 0)
+    return float(neg / max(1, pos))
 
 
 def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path) -> dict[str, Path]:
@@ -388,25 +392,30 @@ def train_xgb_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
         params = {
             "n_estimators": 500,
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "max_depth": trial.suggest_int("max_depth", 3, 10),
+            "max_depth": trial.suggest_int("max_depth", 8, 15),
             "subsample": trial.suggest_float("subsample", 0.5, 1.0),
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-            "min_child_weight": trial.suggest_float("min_child_weight", 1e-3, 10.0, log=True),
+            "min_child_weight": trial.suggest_float("min_child_weight", 1e-3, 1, log=True),
             "gamma": trial.suggest_float("gamma", 0, 5),
             "tree_method": "gpu_hist" if  _gpu_available() and use_gpu else "hist",
             "objective": "binary:logistic",
             "eval_metric": "aucpr",
-            "n_jobs": -1
+            "scale_pos_weight": _scale_pos_weight(y_tr),
+            "n_jobs": -1,
+            "random_state": random_state,
         }
         try:
             model = xgb.XGBClassifier(**params,  early_stopping_rounds=early_stopping_rounds)
             model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
             y_pred = model.predict_proba(X_va)[:, 1]
             score = average_precision_score(y_va, y_pred)
+            y_pred_train = model.predict_proba(X_tr)[:, 1]
+            training_score = average_precision_score(y_tr, y_pred_train)
             # record params + score for later plotting
             rec = params.copy()
             rec["score"] = score
             rec["trial_number"] = trial.number
+            rec["training_score"] = training_score
             trial_history.append(rec)
         except Exception as e:
             score = 0.0
@@ -434,6 +443,9 @@ def train_xgb_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
     for p in ["learning_rate", "max_depth", "subsample", "colsample_bytree",
               "min_child_weight", "gamma"]:
         path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir, "training_score")
         if path_maybe is not None:
             plot_paths.append(path_maybe)
 
@@ -477,14 +489,15 @@ def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
         params = {
             "iterations": 500,
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "depth": trial.suggest_int("depth", 4, 10),
+            "depth": trial.suggest_int("depth", 10, 16),
             "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1, 10),
             "subsample": trial.suggest_float("subsample", 0.5, 1.0),
             "border_count": trial.suggest_int("border_count", 32, 255),
-            "random_seed": random_state,
             "eval_metric": "PRAUC",
             "task_type": "GPU" if  _gpu_available() and use_gpu else "CPU",
-            "verbose": False
+            "verbose": False,
+            "scale_pos_weight": _scale_pos_weight(y_tr),
+            "random_state": random_state,
         }
         model = CatBoostClassifier(**params)
         try:
@@ -494,10 +507,13 @@ def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
                     verbose=False)
             y_pred = model.predict_proba(X_va)[:, 1]
             score = average_precision_score(y_va, y_pred)
+            y_pred_train = model.predict_proba(X_tr)[:, 1]
+            training_score = average_precision_score(y_tr, y_pred_train)
             # record params + score for later plotting
             rec = params.copy()
             rec["score"] = score
             rec["trial_number"] = trial.number
+            rec["training_score"] = training_score
             trial_history.append(rec)
         except Exception as e:
             score = 0.0
@@ -529,6 +545,9 @@ def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
     plot_paths = []
     for p in ["learning_rate", "depth", "subsample", "l2_leaf_reg", "border_count"]:
         path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir, "training_score")
         if path_maybe is not None:
             plot_paths.append(path_maybe)
 
@@ -570,7 +589,7 @@ def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
             "verbosity": -1,
             "boosting_type": "gbdt",
             "num_leaves": trial.suggest_int("num_leaves", 16, 256),
-            "max_depth": trial.suggest_int("max_depth", 3, 12),
+            "max_depth": trial.suggest_int("max_depth", 10, 20),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
             "feature_fraction": trial.suggest_float("feature_fraction", 0.6, 1.0),
             "bagging_fraction": trial.suggest_float("bagging_fraction", 0.6, 1.0),
@@ -579,6 +598,8 @@ def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
             "lambda_l1": trial.suggest_float("lambda_l1", 1e-8, 10.0, log=True),
             "lambda_l2": trial.suggest_float("lambda_l2", 1e-8, 10.0, log=True),
             "device": "gpu" if  _gpu_available() and use_gpu else "cpu",
+            "random_state": random_state,
+            "scale_pos_weight": _scale_pos_weight(y_tr),
         }
         model = lgb.LGBMClassifier(**params, n_estimators=500)
         try:
@@ -588,10 +609,13 @@ def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
                     callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)])
             y_pred = model.predict_proba(X_va)[:, 1]
             score = average_precision_score(y_va, y_pred)
+            y_pred_train = model.predict_proba(X_tr)[:, 1]
+            training_score = average_precision_score(y_tr, y_pred_train)
             # record params + score for later plotting
             rec = params.copy()
             rec["score"] = score
             rec["trial_number"] = trial.number
+            rec["training_score"] = training_score
             trial_history.append(rec)
         except Exception as e:
             score = 0.0
@@ -623,6 +647,9 @@ def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
     for p in ["learning_rate", "max_depth", "num_leaves", "feature_fraction",
               "bagging_fraction", "bagging_freq", "min_child_samples", "lambda_l1", "lambda_l2"]:
         path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir, "training_score")
         if path_maybe is not None:
             plot_paths.append(path_maybe)
 
