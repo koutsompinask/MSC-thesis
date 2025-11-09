@@ -21,7 +21,7 @@ import optuna
 import mlflow as mlf
 import mlflow.xgboost as mlf_xgboost, mlflow.catboost as mlf_catboost, mlflow.lightgbm as mlf_lightgbm, mlflow.sklearn as mlf_sklearn
 from pathlib import Path
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.metrics import (
     roc_auc_score,
     roc_curve,
@@ -36,6 +36,7 @@ from sklearn.metrics import (
     brier_score_loss
 )
 from sklearn.calibration import calibration_curve
+from sklearn.linear_model import LogisticRegression
 from catboost import CatBoostClassifier
 import xgboost as xgb
 import lightgbm as lgb
@@ -359,7 +360,7 @@ def plot_param_vs_score(df: pd.DataFrame, param_name: str, out_dir: Path, metric
 # ---------------------------
 #  MODEL-SPECIFIC TRAINING
 # ---------------------------
-def train_xgb_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
+def train_xgb_optuna(X, y, val_size=0.2, test_size=None, n_trials=30, random_state=42,
                      early_stopping_rounds=50, use_gpu=True):
     """Train XGBoost classifier with Optuna hyperparameter optimization.
     
@@ -370,21 +371,39 @@ def train_xgb_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
         X: Training features (pandas DataFrame or numpy array).
         y: Training labels (pandas Series or numpy array).
         val_size: Fraction of data to use for validation (default: 0.2).
+        test_size: Optional fraction of data to use for test set (default: None).
+            If provided, creates train/val/test split. If None, uses train/val split only.
         n_trials: Number of Optuna trials for hyperparameter search (default: 30).
         random_state: Random seed for reproducibility (default: 42).
         early_stopping_rounds: Early stopping rounds for XGBoost (default: 50).
         use_gpu: Whether to use GPU acceleration if available (default: True).
         
     Returns:
-        tuple: (best_model, best_params, X_va, y_va)
+        tuple: (best_model, best_params, X_va, y_va, hist_df, plot_paths) or
+               (best_model, best_params, X_va, y_va, X_test, y_test, hist_df, plot_paths) if test_size is provided
             - best_model: Trained XGBoost classifier with best parameters
             - best_params: Dictionary of best hyperparameters found
             - X_va: Validation features
             - y_va: Validation labels
+            - X_test: Test features (only if test_size is provided)
+            - y_test: Test labels (only if test_size is provided)
             - hist_df: DataFrame of hyperparameter trial history
             - plot_paths: List of Paths to diagnostic plots
     """
-    X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
+    if test_size is not None:
+        # Create train/val/test split
+        X_tr, X_temp, y_tr, y_temp = train_test_split(
+            X, y, test_size=(val_size + test_size), stratify=y, random_state=random_state
+        )
+        # Split temp into val and test
+        val_ratio = val_size / (val_size + test_size)
+        X_va, X_test, y_va, y_test = train_test_split(
+            X_temp, y_temp, test_size=(1 - val_ratio), stratify=y_temp, random_state=random_state
+        )
+    else:
+        # Standard train/val split
+        X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
+        X_test, y_test = None, None
 
     trial_history = []  # we'll collect params and scores here
     
@@ -428,11 +447,38 @@ def train_xgb_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
             pbar.update(1)
             pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={trial.value:.4f}")
         study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], show_progress_bar=False, gc_after_trial=True)
+    
+    # Check if any trials succeeded
+    if len(trial_history) == 0:
+        raise ValueError("No successful trials completed. All Optuna trials failed. Check your data and parameters.")
+    
     best_params = study.best_params
     print(f"[INFO] Best XGBoost params: {best_params}")
+    
+    # Validate best_params contains required keys
+    required_keys = ["learning_rate", "max_depth", "subsample", "colsample_bytree", 
+                     "min_child_weight", "gamma"]
+    missing_keys = [k for k in required_keys if k not in best_params]
+    if missing_keys:
+        raise ValueError(f"Best params missing required keys: {missing_keys}")
 
-    best_model = xgb.XGBClassifier(**best_params,  early_stopping_rounds=early_stopping_rounds)
+    # Retrain with best params: use n_estimators=1000 for final model (increased from 500 used in trials)
+    # This allows the model to potentially improve further with more trees
+    best_params_final = best_params.copy()
+    best_params_final["n_estimators"] = 1000
+    best_params_final["tree_method"] = "gpu_hist" if _gpu_available() and use_gpu else "hist"
+    best_params_final["objective"] = "binary:logistic"
+    best_params_final["eval_metric"] = "aucpr"
+    best_params_final["scale_pos_weight"] = _scale_pos_weight(y_tr)
+    best_params_final["n_jobs"] = -1
+    best_params_final["random_state"] = random_state
+    best_params_final["verbosity"] = 0
+    
+    best_model = xgb.XGBClassifier(**best_params_final, early_stopping_rounds=early_stopping_rounds)
     best_model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
+    
+    # Update best_params to include n_estimators for logging consistency
+    best_params["n_estimators"] = 1000
 
     # -----------------
     # Build history df + plots
@@ -449,12 +495,15 @@ def train_xgb_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
         if path_maybe is not None:
             plot_paths.append(path_maybe)
 
-    return best_model, best_params, X_va, y_va, hist_df, plot_paths
+    if test_size is not None:
+        return best_model, best_params, X_va, y_va, X_test, y_test, hist_df, plot_paths
+    else:
+        return best_model, best_params, X_va, y_va, hist_df, plot_paths
 
 
 
 
-def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
+def train_catboost_optuna(X, y, val_size=0.2, test_size=None, n_trials=30, random_state=42,
                           early_stopping_rounds=50, use_gpu=True):
     """Train CatBoost classifier with Optuna hyperparameter optimization.
     
@@ -466,21 +515,39 @@ def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
         X: Training features (pandas DataFrame or numpy array).
         y: Training labels (pandas Series or numpy array).
         val_size: Fraction of data to use for validation (default: 0.2).
+        test_size: Optional fraction of data to use for test set (default: None).
+            If provided, creates train/val/test split. If None, uses train/val split only.
         n_trials: Number of Optuna trials for hyperparameter search (default: 30).
         random_state: Random seed for reproducibility (default: 42).
         early_stopping_rounds: Early stopping rounds for CatBoost (default: 50).
         use_gpu: Whether to use GPU acceleration if available (default: True).
         
     Returns:
-        tuple: (best_model, best_params, X_va, y_va)
+        tuple: (best_model, best_params, X_va, y_va, hist_df, plot_paths) or
+               (best_model, best_params, X_va, y_va, X_test, y_test, hist_df, plot_paths) if test_size is provided
             - best_model: Trained CatBoost classifier with best parameters
             - best_params: Dictionary of best hyperparameters found
             - X_va: Validation features
             - y_va: Validation labels
+            - X_test: Test features (only if test_size is provided)
+            - y_test: Test labels (only if test_size is provided)
             - hist_df: DataFrame of hyperparameter trial history
             - plot_paths: List of Paths to diagnostic plots
     """
-    X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
+    if test_size is not None:
+        # Create train/val/test split
+        X_tr, X_temp, y_tr, y_temp = train_test_split(
+            X, y, test_size=(val_size + test_size), stratify=y, random_state=random_state
+        )
+        # Split temp into val and test
+        val_ratio = val_size / (val_size + test_size)
+        X_va, X_test, y_va, y_test = train_test_split(
+            X_temp, y_temp, test_size=(1 - val_ratio), stratify=y_temp, random_state=random_state
+        )
+    else:
+        # Standard train/val split
+        X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
+        X_test, y_test = None, None
     cat_features = [i for i, c in enumerate(X_tr.columns) if str(X_tr[c].dtype) in ["object", "category"]]
 
     trial_history = []  # we'll collect params and scores here
@@ -526,18 +593,43 @@ def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
             pbar.update(1)
             pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={trial.value:.4f}")
         study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], show_progress_bar=False, gc_after_trial=True)
+    
+    # Check if any trials succeeded
+    if len(trial_history) == 0:
+        raise ValueError("No successful trials completed. All Optuna trials failed. Check your data and parameters.")
+    
     best_params = study.best_params
     print(f"[INFO] Best CatBoost params: {best_params}")
+    
+    # Validate best_params contains required keys
+    required_keys = ["learning_rate", "depth", "l2_leaf_reg", "subsample", "border_count"]
+    missing_keys = [k for k in required_keys if k not in best_params]
+    if missing_keys:
+        raise ValueError(f"Best params missing required keys: {missing_keys}")
 
-    best_model = CatBoostClassifier(
-        **best_params, iterations=1000,
-        random_seed=random_state, task_type="GPU" if  _gpu_available() and use_gpu else "CPU", verbose=False
-    )
+    # Retrain with best params: use iterations=1000 for final model (increased from 500 used in trials)
+    # This allows the model to potentially improve further with more iterations
+    best_params_final = best_params.copy()
+    best_params_final["iterations"] = 1000
+    best_params_final["eval_metric"] = "PRAUC"
+    best_params_final["task_type"] = "GPU" if _gpu_available() and use_gpu else "CPU"
+    best_params_final["scale_pos_weight"] = _scale_pos_weight(y_tr)
+    best_params_final["random_seed"] = random_state
+    best_params_final["verbose"] = False
+    
+    best_model = CatBoostClassifier(**best_params_final)
     best_model.fit(X_tr, y_tr, eval_set=(X_va, y_va),
                    cat_features=cat_features,
                    early_stopping_rounds=early_stopping_rounds,
                    verbose=False)
-        # -----------------
+    
+    # Update best_params to include iterations for logging consistency
+    best_params["iterations"] = 1000
+    # Convert random_state to random_seed for consistency
+    if "random_state" in best_params:
+        best_params["random_seed"] = best_params.pop("random_state")
+    
+    # -----------------
     # Build history df + plots
     # -----------------
     hist_df = pd.DataFrame(trial_history)
@@ -551,9 +643,12 @@ def train_catboost_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
         if path_maybe is not None:
             plot_paths.append(path_maybe)
 
-    return best_model, best_params, X_va, y_va, hist_df, plot_paths
+    if test_size is not None:
+        return best_model, best_params, X_va, y_va, X_test, y_test, hist_df, plot_paths
+    else:
+        return best_model, best_params, X_va, y_va, hist_df, plot_paths
 
-def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
+def train_lgbm_optuna(X, y, val_size=0.2, test_size=None, n_trials=30, random_state=42,
                       early_stopping_rounds=50, use_gpu=True):
     """Train LightGBM classifier with Optuna hyperparameter optimization.
     
@@ -564,21 +659,39 @@ def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
         X: Training features (pandas DataFrame or numpy array).
         y: Training labels (pandas Series or numpy array).
         val_size: Fraction of data to use for validation (default: 0.2).
+        test_size: Optional fraction of data to use for test set (default: None).
+            If provided, creates train/val/test split. If None, uses train/val split only.
         n_trials: Number of Optuna trials for hyperparameter search (default: 30).
         random_state: Random seed for reproducibility (default: 42).
         early_stopping_rounds: Early stopping rounds for LightGBM (default: 50).
         use_gpu: Whether to use GPU acceleration if available (default: True).
         
     Returns:
-        tuple: (best_model, best_params, X_va, y_va)
+        tuple: (best_model, best_params, X_va, y_va, hist_df, plot_paths) or
+               (best_model, best_params, X_va, y_va, X_test, y_test, hist_df, plot_paths) if test_size is provided
             - best_model: Trained LightGBM classifier with best parameters
             - best_params: Dictionary of best hyperparameters found
             - X_va: Validation features
             - y_va: Validation labels
+            - X_test: Test features (only if test_size is provided)
+            - y_test: Test labels (only if test_size is provided)
             - hist_df: DataFrame of hyperparameter trial history
             - plot_paths: List of Paths to diagnostic plots
     """
-    X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
+    if test_size is not None:
+        # Create train/val/test split
+        X_tr, X_temp, y_tr, y_temp = train_test_split(
+            X, y, test_size=(val_size + test_size), stratify=y, random_state=random_state
+        )
+        # Split temp into val and test
+        val_ratio = val_size / (val_size + test_size)
+        X_va, X_test, y_va, y_test = train_test_split(
+            X_temp, y_temp, test_size=(1 - val_ratio), stratify=y_temp, random_state=random_state
+        )
+    else:
+        # Standard train/val split
+        X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
+        X_test, y_test = None, None
 
     trial_history = []  # we'll collect params and scores here
     
@@ -629,14 +742,41 @@ def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
             pbar.update(1)
             pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={trial.value:.4f}")
         study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], show_progress_bar=False, gc_after_trial=True)
+    
+    # Check if any trials succeeded
+    if len(trial_history) == 0:
+        raise ValueError("No successful trials completed. All Optuna trials failed. Check your data and parameters.")
+    
     best_params = study.best_params
     print(f"[INFO] Best LightGBM params: {best_params}")
+    
+    # Validate best_params contains required keys
+    required_keys = ["num_leaves", "max_depth", "learning_rate", "feature_fraction", 
+                     "bagging_fraction", "bagging_freq", "min_child_samples", "lambda_l1", "lambda_l2"]
+    missing_keys = [k for k in required_keys if k not in best_params]
+    if missing_keys:
+        raise ValueError(f"Best params missing required keys: {missing_keys}")
 
-    best_model = lgb.LGBMClassifier(**best_params, n_estimators=1000)
+    # Retrain with best params: use n_estimators=1000 for final model (increased from 500 used in trials)
+    # This allows the model to potentially improve further with more trees
+    best_params_final = best_params.copy()
+    best_params_final["n_estimators"] = 1000
+    best_params_final["objective"] = "binary"
+    best_params_final["metric"] = "average_precision"
+    best_params_final["verbosity"] = -1
+    best_params_final["boosting_type"] = "gbdt"
+    best_params_final["device"] = "gpu" if _gpu_available() and use_gpu else "cpu"
+    best_params_final["scale_pos_weight"] = _scale_pos_weight(y_tr)
+    best_params_final["random_state"] = random_state
+    
+    best_model = lgb.LGBMClassifier(**best_params_final)
     best_model.fit(X_tr, y_tr,
                    eval_set=[(X_va, y_va)],
                    eval_metric="average_precision",
                    callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)])
+    
+    # Update best_params to include n_estimators for logging consistency
+    best_params["n_estimators"] = 1000
     
     # -----------------
     # Build history df + plots
@@ -653,4 +793,302 @@ def train_lgbm_optuna(X, y, val_size=0.2, n_trials=30, random_state=42,
         if path_maybe is not None:
             plot_paths.append(path_maybe)
 
-    return best_model, best_params, X_va, y_va, hist_df, plot_paths
+    if test_size is not None:
+        return best_model, best_params, X_va, y_va, X_test, y_test, hist_df, plot_paths
+    else:
+        return best_model, best_params, X_va, y_va, hist_df, plot_paths
+
+def train_best_base_models_from_mlflow(
+    X: pd.DataFrame,
+    y: pd.Series,
+    experiment_name: str,
+    val_size: float = 0.2,
+    test_size: float | None = None,
+    metric: str = "pr_auc",
+    random_state: int = 42,
+    tracking_uri: str = "mlruns",
+    early_stopping_rounds: int = 50,
+    use_gpu: bool = True,
+) -> tuple:
+    """Load best models from MLflow and retrain them on the current dataset."""
+    
+    mlf.set_tracking_uri(tracking_uri)
+    experiment = mlf.get_experiment_by_name(experiment_name)
+    if experiment is None:
+        raise ValueError(f"Experiment '{experiment_name}' not found in MLflow.")
+    experiment_id = experiment.experiment_id
+
+    # Split data
+    if test_size is not None:
+        X_tr, X_temp, y_tr, y_temp = train_test_split(
+            X, y, test_size=(val_size + test_size), stratify=y, random_state=random_state
+        )
+        val_ratio = val_size / (val_size + test_size)
+        X_va, X_test, y_va, y_test = train_test_split(
+            X_temp, y_temp, test_size=(1 - val_ratio), stratify=y_temp, random_state=random_state
+        )
+    else:
+        X_tr, X_va, y_tr, y_va = train_test_split(
+            X, y, test_size=val_size, stratify=y, random_state=random_state
+        )
+        X_test, y_test = None, None
+
+    base_models = {}
+    best_params_dict = {}
+
+    for model_type in ["xgboost", "catboost", "lightgbm"]:
+        print(f"[INFO] Searching for best {model_type} model in experiment '{experiment_name}'...")
+
+        runs = mlf.search_runs(
+            experiment_ids=[experiment_id],
+            filter_string=f"tags.model_type = '{model_type}'",
+            order_by=[f"metrics.{metric} DESC"],
+            max_results=1,
+        )
+
+        if runs.empty:
+            print(f"[WARN] No {model_type} runs found — skipping.")
+            continue
+
+        best_run = runs.iloc[0]
+        run_id = best_run["run_id"]
+        print(f"[INFO] Found best {model_type} run {run_id} with {metric}={best_run[f'metrics.{metric}']:.4f}")
+
+        client = mlf.tracking.MlflowClient(tracking_uri=tracking_uri)
+        params = client.get_run(run_id).data.params
+
+        # Convert param types
+        best_params = {}
+        for k, v in params.items():
+            try:
+                if "." in v:
+                    best_params[k] = float(v)
+                elif v.lower() in ["true", "false"]:
+                    best_params[k] = v.lower() == "true"
+                else:
+                    best_params[k] = int(v)
+            except Exception:
+                best_params[k] = v
+        best_params_dict[model_type] = best_params
+
+        # Retrain model
+        print(f"[INFO] Retraining {model_type} with best parameters...")
+
+        if model_type == "xgboost":
+            xgb_params = best_params.copy()
+            xgb_params.update({
+                "n_estimators": 1000,
+                "objective": "binary:logistic",
+                "eval_metric": "aucpr",
+                "tree_method": "gpu_hist" if _gpu_available() and use_gpu else "hist",
+                "n_jobs": -1,
+                "random_state": random_state,
+            })
+            model = xgb.XGBClassifier(**xgb_params, early_stopping_rounds=early_stopping_rounds)
+            model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
+            base_models["xgboost"] = model
+
+        elif model_type == "catboost":
+            cat_params = best_params.copy()
+            cat_params.update({
+                "iterations": 1000,
+                "eval_metric": "PRAUC",
+                "task_type": "GPU" if _gpu_available() and use_gpu else "CPU",
+                "random_seed": random_state,
+                "verbose": False,
+            })
+            cat_features = [i for i, c in enumerate(X_tr.columns) if str(X_tr[c].dtype) in ["object", "category"]]
+            model = CatBoostClassifier(**cat_params)
+            model.fit(X_tr, y_tr, eval_set=(X_va, y_va), cat_features=cat_features or None, verbose=False)
+            base_models["catboost"] = model
+
+        elif model_type == "lightgbm":
+            lgb_params = best_params.copy()
+            lgb_params.update({
+                "n_estimators": 1000,
+                "objective": "binary",
+                "metric": "average_precision",
+                "verbosity": -1,
+                "boosting_type": "gbdt",
+                "device": "gpu" if _gpu_available() and use_gpu else "cpu",
+                "random_state": random_state,
+            })
+            model = lgb.LGBMClassifier(**lgb_params)
+            model.fit(
+                X_tr, y_tr, eval_set=[(X_va, y_va)],
+                eval_metric="average_precision",
+                callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)]
+            )
+            base_models["lightgbm"] = model
+
+    if not base_models:
+        raise ValueError("No base models were successfully trained.")
+
+    return base_models, X_tr, X_va, y_tr, y_va, X_test, y_test, best_params_dict
+
+def train_ensemble(
+    base_models: dict,
+    X_tr: pd.DataFrame,
+    y_tr: pd.Series,
+    X_va: pd.DataFrame,
+    y_va: pd.Series,
+    X_test: pd.Series,
+    y_test: pd.Series,
+    n_trials: int = 30,
+    random_state: int = 42,
+):
+    """Train Optuna-tuned logistic regression meta-learner using base model predictions."""
+    
+    print("[INFO] Generating meta-features...")
+    # Build train meta features
+    X_meta = np.column_stack([m.predict_proba(X_tr)[:, 1] for m in base_models.values()])
+    X_meta_val = np.column_stack([m.predict_proba(X_va)[:, 1] for m in base_models.values()])
+
+    # Display base model individual validation PR-AUC
+    for name, model in base_models.items():
+        y_pred_val = model.predict_proba(X_va)[:, 1]
+        print(f"[INFO] {name} validation PR-AUC: {average_precision_score(y_va, y_pred_val):.4f}")
+
+    # Prepare Optuna optimization
+    trial_history = []
+
+    def objective(trial):
+        # Core hyperparameters
+        C = trial.suggest_float("C", 1e-4, 100.0, log=True)
+        max_iter = 1000
+        class_weight = trial.suggest_categorical("class_weight", ["balanced", None])
+
+        # Define valid penalty–solver combinations
+        valid_combinations = {
+            "lbfgs": ["l2", None],
+            "liblinear": ["l1", "l2"],
+            "newton-cg": ["l2", None],
+            "sag": ["l2", None],
+            "saga": ["l1", "l2", "elasticnet"],
+        }
+
+        # Sample solver first
+        solver = trial.suggest_categorical("solver", list(valid_combinations.keys()))
+
+        # Now define penalty parameter with unique name per solver
+        penalty_param_name = f"penalty_{solver}"
+        penalty = trial.suggest_categorical(penalty_param_name, valid_combinations[solver])
+        trial.set_user_attr("penalty", penalty)
+        # Handle l1_ratio for elasticnet
+        l1_ratio = None
+        if penalty == "elasticnet":
+            l1_ratio = trial.suggest_float("l1_ratio", 0.0, 1.0)
+
+        # Build model parameters
+        params = {
+            "C": C,
+            "penalty": penalty,
+            "solver": solver,
+            "max_iter": max_iter,
+            "class_weight": class_weight,
+            "random_state": random_state,
+        }
+        if l1_ratio is not None:
+            params["l1_ratio"] = l1_ratio
+
+        try:
+            model = LogisticRegression(**params)
+            model.fit(X_meta, y_tr)
+            preds = model.predict_proba(X_meta_val)[:, 1]
+            score = average_precision_score(y_va, preds)
+
+            # Also compute training score
+            y_pred_train = model.predict_proba(X_meta)[:, 1]
+            training_score = average_precision_score(y_tr, y_pred_train)
+        
+
+            # Record trial info
+            rec = params.copy()
+            rec["score"] = score
+            rec["trial_number"] = trial.number
+            trial_history.append(rec)
+            rec["training_score"] = training_score
+            if cv_folds > 1:
+                rec["cv_folds"] = cv_folds
+            trial_history.append(rec)
+            return score
+
+        except Exception as e:
+            print(f"[WARN] Trial {trial.number} failed ({e})")
+            return 0.0
+
+    print("[INFO] Optimizing meta-learner with Optuna...")
+    study = optuna.create_study(direction="maximize", study_name="ensemble_meta_learner_pr_auc_optimization")
+    with tqdm(total=n_trials, desc="[Optuna Ensemble Meta-Learner Tuning]", unit="trial") as pbar:
+        def _tqdm_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+            pbar.update(1)
+            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={trial.value:.4f}")
+        study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], show_progress_bar=False, gc_after_trial=True)
+    
+    best_params = study.best_params
+    print(f"[INFO] Best meta-learner params: {best_params}")
+
+    for key in best_params.keys():
+        if key.startswith("penalty_"):
+            best_params["penalty"] = best_params[key]
+            del best_params[key]
+            break
+    
+    # Only include l1_ratio if penalty is elasticnet
+    if best_params.get("penalty") != "elasticnet" and "l1_ratio" in best_params:
+        best_params.pop("l1_ratio")
+    
+    # Final model
+    ensemble = LogisticRegression(**best_params, random_state=random_state)
+    ensemble.fit(X_meta, y_tr)
+    # Prepare best_params for logging (convert None to string for MLflow compatibility)
+    best_params_log = best_params.copy()
+    best_params_log["random_state"] = random_state
+    if "class_weight" in best_params_log and best_params_log["class_weight"] is None:
+        best_params_log["class_weight"] = "None"
+    # Handle None penalty for MLflow logging
+    if best_params_log.get("penalty") is None:
+        best_params_log["penalty"] = "None"
+    # Remove l1_ratio if not elasticnet for cleaner logging
+    if best_params_log.get("penalty") != "elasticnet" and "l1_ratio" in best_params_log:
+        best_params_log.pop("l1_ratio")
+    
+    # Evaluate ensemble on validation set
+    y_prob_ensemble = ensemble.predict_proba(X_meta_val)[:, 1]
+    ensemble_pr_auc = average_precision_score(y_va, y_prob_ensemble)
+    ensemble_roc_auc = roc_auc_score(y_va, y_prob_ensemble)
+    
+    print(f"[INFO] Ensemble validation PR-AUC: {ensemble_pr_auc:.4f}")
+    print(f"[INFO] Ensemble validation ROC-AUC: {ensemble_roc_auc:.4f}")
+    
+    X_meta_test = None
+    # Evaluate on test set if available
+    if X_test is not None:
+        test_base_predictions = []
+        for name, model in base_models.items():
+            y_prob = model.predict_proba(X_test)[:, 1]
+            test_base_predictions.append(y_prob)
+        X_meta_test = np.column_stack(test_base_predictions)
+        y_prob_ensemble_test = ensemble.predict_proba(X_meta_test)[:, 1]
+        ensemble_pr_auc_test = average_precision_score(y_test, y_prob_ensemble_test)
+        ensemble_roc_auc_test = roc_auc_score(y_test, y_prob_ensemble_test)
+        
+        print(f"[INFO] Ensemble test PR-AUC: {ensemble_pr_auc_test:.4f}")
+        print(f"[INFO] Ensemble test ROC-AUC: {ensemble_roc_auc_test:.4f}")
+    
+    # Build history df + plots
+    hist_df = pd.DataFrame(trial_history)
+    plots_dir = Path("hp_search_plots/ensemble")
+    plot_paths = []
+    for p in ["C", "penalty", "solver", "max_iter", "class_weight", "l1_ratio"]:
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir, "training_score")
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+
+        if X_test is not None:
+            return ensemble, base_models, X_meta_val, y_va, X_meta_test, y_test, best_params_log, hist_df, plot_paths
+        else:
+            return ensemble, base_models, X_va, y_va, best_params_log, hist_df, plot_paths
