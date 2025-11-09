@@ -1008,8 +1008,6 @@ def train_ensemble(
             rec["trial_number"] = trial.number
             trial_history.append(rec)
             rec["training_score"] = training_score
-            if cv_folds > 1:
-                rec["cv_folds"] = cv_folds
             trial_history.append(rec)
             return score
 

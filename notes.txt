@@ -1,8 +1,0 @@
-google type docstring
-3.12 + typehints
-precommit files / prek
-    bandit, pyupgrade
-
-dvc + weights & biases 
-
-shap iq
