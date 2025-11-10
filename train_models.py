@@ -50,7 +50,11 @@ def _gpu_available() -> bool:
     If successful, GPU is available; otherwise, falls back to CPU.
     
     Returns:
-        bool: True if GPU is available and working, False otherwise.
+        bool: True if GPU is available and working with XGBoost, False otherwise.
+    
+    Example:
+        >>> use_gpu = _gpu_available()
+        >>> print(f"GPU acceleration available: {use_gpu}")
     """
     try:
         # Attempt a tiny GPU-boosted fit; if it fails, fall back to CPU
@@ -66,25 +70,53 @@ def _gpu_available() -> bool:
         return False
 
 def _scale_pos_weight(y: np.ndarray) -> float:
+    """Calculate scaling factor for positive class weight in imbalanced datasets.
+    
+    Args:
+        y: Array of binary labels (0 or 1).
+        
+    Returns:
+        float: Ratio of negative to positive samples, used to balance class weights.
+        
+    Example:
+        >>> y = np.array([0, 0, 0, 1])  # imbalanced dataset
+        >>> weight = _scale_pos_weight(y)
+        >>> print(f"Positive class weight scaling: {weight}")  # would print 3.0
+    """
     pos = np.sum(y == 1)
     neg = np.sum(y == 0)
     return float(neg / max(1, pos))
 
 
 def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path) -> dict[str, Path]:
-    """Generate evaluation plots and save them to disk.
+    """Generate and save evaluation plots for binary classification results.
     
-    Creates ROC curve, Precision-Recall curve, and confusion matrix plots
-    for model evaluation and saves them as PNG files.
+    Creates and saves three key evaluation plots:
+    - ROC curve showing true positive vs false positive rate trade-off
+    - Precision-Recall curve showing precision vs recall trade-off
+    - Confusion matrix showing prediction counts at 0.5 threshold
     
     Args:
         y_true: True binary labels (0 or 1).
-        y_prob: Predicted probabilities for the positive class.
+        y_prob: Predicted probabilities for the positive class (between 0 and 1).
         out_dir: Directory path where plots will be saved.
         
     Returns:
-        dict[str, Path]: Dictionary mapping plot names to file paths.
-            Keys: 'roc_curve', 'pr_curve', 'confusion_matrix'
+        dict[str, Path]: Dictionary mapping plot names to their saved file paths.
+            Keys: 
+                'roc_curve': Path to ROC curve plot
+                'pr_curve': Path to precision-recall curve plot
+                'confusion_matrix': Path to confusion matrix plot
+            
+    Example:
+        >>> y_true = np.array([0, 1, 1, 0])
+        >>> y_prob = np.array([0.1, 0.9, 0.8, 0.3])
+        >>> paths = _plot_artifacts(y_true, y_prob, Path("evaluation_plots"))
+        >>> print(f"ROC curve saved to: {paths['roc_curve']}")
+    
+    Note:
+        All plots are saved as PNG files with 150 DPI resolution.
+        The plots include relevant metrics like AUC-ROC and AP scores.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     paths: dict[str, Path] = {}
@@ -158,26 +190,54 @@ def evaluate_and_log(
     hp_search_history: pd.DataFrame | None = None,
     hp_search_plots: list[Path] | None = None,
 ):
-    """Evaluate a trained binary classifier and log results to MLflow.
+    """Evaluate a binary classifier and log comprehensive results to MLflow.
     
-    Performs comprehensive evaluation including metrics calculation, SHAP explainability,
-    calibration analysis, and visualization generation. Results are logged to MLflow
-    with artifacts, metrics, and model storage.
+    Performs extensive model evaluation including:
+    - Standard metrics (ROC-AUC, PR-AUC, F1, etc.)
+    - SHAP feature importance analysis
+    - Calibration assessment
+    - Performance visualization
+    
+    Automatically detects model type and logs everything to MLflow for tracking.
     
     Args:
-        model: Trained binary classifier (XGBoost, CatBoost, LightGBM, or sklearn-style).
-        X_va: Validation features as pandas DataFrame.
-        y_va: Validation labels as pandas Series.
-        experiment_name: MLflow experiment name.
-        run_name: MLflow run name.
-        model_type: Model type string. If None, auto-detects from model class.
-        best_params: Dictionary of best hyperparameters to log.
-        tracking_uri: MLflow tracking URI (default: "mlruns").
-        hp_search_history: Optional DataFrame of hyperparameter search history.
-        hp_search_plots: Optional list of Paths to hyperparameter search diagnostic plots.
+        model: Any binary classifier supporting predict_proba (XGBoost, CatBoost,
+            LightGBM, or scikit-learn style).
+        X_va: Validation features DataFrame.
+        y_va: Validation target Series.
+        experiment_name: Name of the MLflow experiment for logging.
+        run_name: Name for this specific MLflow run.
+        model_type: Optional model type string for tagging. If None, auto-detects.
+            Valid values: "xgboost", "catboost", "lightgbm", "sklearn".
+        best_params: Optional dictionary of best hyperparameters to log.
+        tracking_uri: MLflow tracking URI. Defaults to "mlruns".
+        hp_search_history: Optional DataFrame with hyperparameter optimization history.
+        hp_search_plots: Optional list of hyperparameter visualization plot paths.
         
     Returns:
-        dict: Dictionary containing evaluation metrics (roc_auc, pr_auc, precision, recall, f1).
+        dict: Performance metrics including:
+            - roc_auc: Area under ROC curve
+            - pr_auc: Area under precision-recall curve
+            - precision: Precision at threshold 0.5
+            - recall: Recall at threshold 0.5
+            - f1: F1 score at threshold 0.5
+            
+    Example:
+        >>> model = XGBClassifier()
+        >>> model.fit(X_train, y_train)
+        >>> metrics = evaluate_and_log(
+        ...     model=model,
+        ...     X_va=X_val,
+        ...     y_va=y_val,
+        ...     experiment_name="fraud_detection",
+        ...     run_name="xgboost_v1"
+        ... )
+        >>> print(f"PR-AUC: {metrics['pr_auc']:.4f}")
+        
+    Note:
+        SHAP analysis is performed on a balanced subset of validation data
+        (up to 500 samples per class) to keep computation tractable while
+        maintaining class balance.
     """
     # --- Detect model type automatically if not provided ---
     if model_type is None:
@@ -310,25 +370,41 @@ def evaluate_and_log(
     return metrics
 
 def plot_param_vs_score(df: pd.DataFrame, param_name: str, out_dir: Path, metric_name: str = "score"):
-    """
-    Generate a diagnostic plot of model score vs hyperparameter value.
-    Saves the plot to disk and returns the path.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Trial history DataFrame containing at least [param_name, metric_name].
-    param_name : str
-        Name of the hyperparameter column to plot.
-    out_dir : pathlib.Path
-        Directory to save the resulting plot.
-    metric_name : str
-        Name of the metric column in df (default: 'score').
-
-    Returns
-    -------
-    Path or None
-        Path to the saved PNG file, or None if column missing.
+    """Generate a diagnostic plot showing hyperparameter value vs model performance.
+    
+    Creates a visualization to analyze the relationship between hyperparameter values
+    and model performance metrics. The plot type automatically adapts based on the
+    parameter type:
+    - For categorical/integer/boolean parameters: Bar plot showing mean scores
+    - For continuous parameters: Scatter plot of individual trials
+    
+    Args:
+        df: Trial history DataFrame with at least [param_name, metric_name] columns.
+        param_name: Name of the hyperparameter column to visualize.
+        out_dir: Directory where the plot will be saved.
+        metric_name: Name of the metric column in df. Defaults to "score".
+        
+    Returns:
+        Path | None: Path to the saved PNG plot file if successful, None if the 
+            parameter column is missing from the DataFrame.
+            
+    Example:
+        >>> history_df = pd.DataFrame({
+        ...     "learning_rate": [0.01, 0.1, 0.3],
+        ...     "score": [0.85, 0.90, 0.87]
+        ... })
+        >>> path = plot_param_vs_score(
+        ...     df=history_df,
+        ...     param_name="learning_rate",
+        ...     out_dir=Path("hyperparameter_plots")
+        ... )
+        >>> print(f"Diagnostic plot saved to: {path}")
+        
+    Note:
+        - Plots are saved as PNG files with 150 DPI resolution
+        - For categorical parameters, values are sorted before plotting
+        - Bar plots include error bars showing score variance
+        - Scatter plots use partial transparency to show point density
     """
     if param_name not in df.columns:
         return None
@@ -360,50 +436,54 @@ def plot_param_vs_score(df: pd.DataFrame, param_name: str, out_dir: Path, metric
 # ---------------------------
 #  MODEL-SPECIFIC TRAINING
 # ---------------------------
-def train_xgb_optuna(X, y, val_size=0.2, test_size=None, n_trials=30, random_state=42,
+def train_xgb_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
                      early_stopping_rounds=50, use_gpu=True):
-    """Train XGBoost classifier with Optuna hyperparameter optimization.
+    """Train an XGBoost classifier with Optuna hyperparameter optimization.
     
-    Performs hyperparameter tuning using Optuna TPE sampler to optimize
-    PR-AUC score. Uses early stopping and GPU acceleration when available.
+    Uses Optuna's TPE sampler to optimize hyperparameters targeting PR-AUC score.
+    Features include GPU acceleration (if available), early stopping, and 
+    comprehensive hyperparameter visualization.
     
     Args:
-        X: Training features (pandas DataFrame or numpy array).
-        y: Training labels (pandas Series or numpy array).
-        val_size: Fraction of data to use for validation (default: 0.2).
-        test_size: Optional fraction of data to use for test set (default: None).
-            If provided, creates train/val/test split. If None, uses train/val split only.
-        n_trials: Number of Optuna trials for hyperparameter search (default: 30).
-        random_state: Random seed for reproducibility (default: 42).
-        early_stopping_rounds: Early stopping rounds for XGBoost (default: 50).
-        use_gpu: Whether to use GPU acceleration if available (default: True).
+        X: Training features as pandas DataFrame or numpy array.
+        y: Training labels as pandas Series or numpy array.
+        test_size: Fraction of data to use for test set. Defaults to 0.2.
+        n_trials: Number of Optuna trials for hyperparameter search. Defaults to 30.
+        random_state: Random seed for reproducibility. Defaults to 42.
+        early_stopping_rounds: Number of rounds with no improvement to trigger early
+            stopping. Defaults to 50.
+        use_gpu: Whether to use GPU acceleration if available. Defaults to True.
         
     Returns:
-        tuple: (best_model, best_params, X_va, y_va, hist_df, plot_paths) or
-               (best_model, best_params, X_va, y_va, X_test, y_test, hist_df, plot_paths) if test_size is provided
-            - best_model: Trained XGBoost classifier with best parameters
-            - best_params: Dictionary of best hyperparameters found
-            - X_va: Validation features
-            - y_va: Validation labels
-            - X_test: Test features (only if test_size is provided)
-            - y_test: Test labels (only if test_size is provided)
-            - hist_df: DataFrame of hyperparameter trial history
-            - plot_paths: List of Paths to diagnostic plots
+        tuple: A tuple containing:
+            best_model: Trained XGBoost classifier with best parameters
+            best_params: Dictionary of best hyperparameters found
+            X_va: Validation features
+            y_va: Validation labels
+            hist_df: DataFrame containing trial history with parameters and scores
+            plot_paths: List of Paths to hyperparameter visualization plots
+    
+    Raises:
+        ValueError: If no successful trials complete or best parameters are missing
+            required keys.
+    
+    Example:
+        >>> from sklearn.datasets import make_classification
+        >>> X, y = make_classification(n_samples=1000, random_state=42)
+        >>> model, params, X_val, y_val, history, plots = train_xgb_optuna(X, y)
+        >>> print(f"Best PR-AUC: {history['score'].max():.4f}")
+    
+    Note:
+        Hyperparameters optimized include:
+        - learning_rate: [0.01, 0.3] log-uniform
+        - max_depth: [8, 15]
+        - subsample: [0.5, 1.0]
+        - colsample_bytree: [0.5, 1.0]
+        - min_child_weight: [1e-3, 1.0] log-uniform
+        - gamma: [0, 5]
     """
-    if test_size is not None:
-        # Create train/val/test split
-        X_tr, X_temp, y_tr, y_temp = train_test_split(
-            X, y, test_size=(val_size + test_size), stratify=y, random_state=random_state
-        )
-        # Split temp into val and test
-        val_ratio = val_size / (val_size + test_size)
-        X_va, X_test, y_va, y_test = train_test_split(
-            X_temp, y_temp, test_size=(1 - val_ratio), stratify=y_temp, random_state=random_state
-        )
-    else:
-        # Standard train/val split
-        X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
-        X_test, y_test = None, None
+    # Standard train/val split
+    X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=test_size, stratify=y, random_state=random_state)
 
     trial_history = []  # we'll collect params and scores here
     
@@ -424,18 +504,44 @@ def train_xgb_optuna(X, y, val_size=0.2, test_size=None, n_trials=30, random_sta
             "random_state": random_state,
         }
         try:
-            model = xgb.XGBClassifier(**params,  early_stopping_rounds=early_stopping_rounds)
-            model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
-            y_pred = model.predict_proba(X_va)[:, 1]
-            score = average_precision_score(y_va, y_pred)
-            y_pred_train = model.predict_proba(X_tr)[:, 1]
-            training_score = average_precision_score(y_tr, y_pred_train)
-            # record params + score for later plotting
-            rec = params.copy()
-            rec["score"] = score
-            rec["trial_number"] = trial.number
-            rec["training_score"] = training_score
-            trial_history.append(rec)
+            # 5-fold cross-validation
+            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+            cv_scores = []
+            cv_training_scores = []
+            
+            for train_idx, val_idx in cv.split(X_tr, y_tr):
+                X_train_fold, X_val_fold = X_tr.iloc[train_idx], X_tr.iloc[val_idx]
+                y_train_fold, y_val_fold = y_tr.iloc[train_idx], y_tr.iloc[val_idx]
+                
+                model = xgb.XGBClassifier(**params, early_stopping_rounds=early_stopping_rounds)
+                model.fit(
+                    X_train_fold, y_train_fold,
+                    eval_set=[(X_val_fold, y_val_fold)],
+                    verbose=False
+                )
+                
+                # Evaluate fold
+                y_prob = model.predict_proba(X_val_fold)[:, 1]
+                fold_score = average_precision_score(y_val_fold, y_prob)
+                cv_scores.append(fold_score)
+                
+                # Training score for this fold
+                y_prob_train = model.predict_proba(X_train_fold)[:, 1]
+                train_score = average_precision_score(y_train_fold, y_prob_train)
+                cv_training_scores.append(train_score)
+            
+            # Average scores across folds
+            score = np.mean(cv_scores)
+            train_score = np.mean(cv_training_scores)
+            
+            # Record trial results including CV stats
+            trial_history.append({
+                **params,
+                "score": score,
+                "training_score": train_score,
+                "cv_scores": cv_scores,
+                "cv_std": np.std(cv_scores)
+            })
         except Exception as e:
             score = 0.0
             print(f"[WARN] Trial {trial.number} failed with error: {e}")
@@ -495,32 +601,25 @@ def train_xgb_optuna(X, y, val_size=0.2, test_size=None, n_trials=30, random_sta
         if path_maybe is not None:
             plot_paths.append(path_maybe)
 
-    if test_size is not None:
-        return best_model, best_params, X_va, y_va, X_test, y_test, hist_df, plot_paths
-    else:
-        return best_model, best_params, X_va, y_va, hist_df, plot_paths
+    return best_model, best_params, X_va, y_va, hist_df, plot_paths
 
 
-
-
-def train_catboost_optuna(X, y, val_size=0.2, test_size=None, n_trials=30, random_state=42,
+def train_catboost_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
                           early_stopping_rounds=50, use_gpu=True):
-    """Train CatBoost classifier with Optuna hyperparameter optimization.
+    """Train a CatBoost classifier with automatic hyperparameter optimization.
     
-    Performs hyperparameter tuning using Optuna TPE sampler to optimize
-    PR-AUC score. Handles categorical features automatically and uses
-    GPU acceleration when available.
+    Uses Optuna's TPE sampler to optimize hyperparameters targeting PR-AUC score.
+    Automatically handles categorical features and includes GPU acceleration support.
     
     Args:
-        X: Training features (pandas DataFrame or numpy array).
-        y: Training labels (pandas Series or numpy array).
-        val_size: Fraction of data to use for validation (default: 0.2).
-        test_size: Optional fraction of data to use for test set (default: None).
-            If provided, creates train/val/test split. If None, uses train/val split only.
-        n_trials: Number of Optuna trials for hyperparameter search (default: 30).
-        random_state: Random seed for reproducibility (default: 42).
-        early_stopping_rounds: Early stopping rounds for CatBoost (default: 50).
-        use_gpu: Whether to use GPU acceleration if available (default: True).
+        X: Training features as pandas DataFrame or numpy array.
+        y: Training labels as pandas Series or numpy array.
+        test_size: Fraction of data to use for test set. Defaults to 0.2.
+        n_trials: Number of Optuna trials for hyperparameter search. Defaults to 30.
+        random_state: Random seed for reproducibility. Defaults to 42.
+        early_stopping_rounds: Number of rounds with no improvement to trigger early
+            stopping. Defaults to 50.
+        use_gpu: Whether to use GPU acceleration if available. Defaults to True.
         
     Returns:
         tuple: (best_model, best_params, X_va, y_va, hist_df, plot_paths) or
@@ -529,27 +628,11 @@ def train_catboost_optuna(X, y, val_size=0.2, test_size=None, n_trials=30, rando
             - best_params: Dictionary of best hyperparameters found
             - X_va: Validation features
             - y_va: Validation labels
-            - X_test: Test features (only if test_size is provided)
-            - y_test: Test labels (only if test_size is provided)
             - hist_df: DataFrame of hyperparameter trial history
             - plot_paths: List of Paths to diagnostic plots
     """
-    if test_size is not None:
-        # Create train/val/test split
-        X_tr, X_temp, y_tr, y_temp = train_test_split(
-            X, y, test_size=(val_size + test_size), stratify=y, random_state=random_state
-        )
-        # Split temp into val and test
-        val_ratio = val_size / (val_size + test_size)
-        X_va, X_test, y_va, y_test = train_test_split(
-            X_temp, y_temp, test_size=(1 - val_ratio), stratify=y_temp, random_state=random_state
-        )
-    else:
-        # Standard train/val split
-        X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
-        X_test, y_test = None, None
-    cat_features = [i for i, c in enumerate(X_tr.columns) if str(X_tr[c].dtype) in ["object", "category"]]
-
+    # Standard train/val split
+    X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=test_size, stratify=y, random_state=random_state)
     trial_history = []  # we'll collect params and scores here
 
     def objective(trial):
@@ -568,20 +651,44 @@ def train_catboost_optuna(X, y, val_size=0.2, test_size=None, n_trials=30, rando
         }
         model = CatBoostClassifier(**params)
         try:
-            model.fit(X_tr, y_tr, eval_set=(X_va, y_va),
-                    cat_features=cat_features,
+            # 5-fold cross-validation
+            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+            cv_scores = []
+            cv_training_scores = []
+            
+            for train_idx, val_idx in cv.split(X_tr, y_tr):
+                X_train_fold, X_val_fold = X_tr.iloc[train_idx], X_tr.iloc[val_idx]
+                y_train_fold, y_val_fold = y_tr.iloc[train_idx], y_tr.iloc[val_idx]
+                
+                model.fit(
+                    X_train_fold, y_train_fold,
+                    eval_set=[(X_val_fold, y_val_fold)],
                     early_stopping_rounds=early_stopping_rounds,
-                    verbose=False)
-            y_pred = model.predict_proba(X_va)[:, 1]
-            score = average_precision_score(y_va, y_pred)
-            y_pred_train = model.predict_proba(X_tr)[:, 1]
-            training_score = average_precision_score(y_tr, y_pred_train)
-            # record params + score for later plotting
-            rec = params.copy()
-            rec["score"] = score
-            rec["trial_number"] = trial.number
-            rec["training_score"] = training_score
-            trial_history.append(rec)
+                    verbose=False
+                )
+                
+                # Evaluate fold
+                y_prob = model.predict_proba(X_val_fold)[:, 1]
+                fold_score = average_precision_score(y_val_fold, y_prob)
+                cv_scores.append(fold_score)
+                
+                # Training score for this fold
+                y_prob_train = model.predict_proba(X_train_fold)[:, 1]
+                train_score = average_precision_score(y_train_fold, y_prob_train)
+                cv_training_scores.append(train_score)
+            
+            # Average scores across folds
+            score = np.mean(cv_scores)
+            train_score = np.mean(cv_training_scores)
+            
+            # Record trial results including CV stats
+            trial_history.append({
+                **params,
+                "score": score,
+                "training_score": train_score,
+                "cv_scores": cv_scores,
+                "cv_std": np.std(cv_scores)
+            })
         except Exception as e:
             score = 0.0
             print(f"[WARN] Trial {trial.number} failed with error: {e}")
@@ -642,56 +749,60 @@ def train_catboost_optuna(X, y, val_size=0.2, test_size=None, n_trials=30, rando
         path_maybe = plot_param_vs_score(hist_df, p, plots_dir, "training_score")
         if path_maybe is not None:
             plot_paths.append(path_maybe)
-
-    if test_size is not None:
-        return best_model, best_params, X_va, y_va, X_test, y_test, hist_df, plot_paths
-    else:
-        return best_model, best_params, X_va, y_va, hist_df, plot_paths
-
-def train_lgbm_optuna(X, y, val_size=0.2, test_size=None, n_trials=30, random_state=42,
-                      early_stopping_rounds=50, use_gpu=True):
-    """Train LightGBM classifier with Optuna hyperparameter optimization.
     
-    Performs hyperparameter tuning using Optuna TPE sampler to optimize
-    PR-AUC score. Uses early stopping and GPU acceleration when available.
+    return best_model, best_params, X_va, y_va, hist_df, plot_paths
+
+def train_lgbm_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
+                      early_stopping_rounds=50, use_gpu=True):
+    """Train a LightGBM classifier with Optuna hyperparameter optimization.
+    
+    Uses Optuna's TPE sampler to optimize hyperparameters targeting PR-AUC score.
+    Features include GPU acceleration support, early stopping, and gradient-based
+    boosting optimizations specific to LightGBM.
     
     Args:
-        X: Training features (pandas DataFrame or numpy array).
-        y: Training labels (pandas Series or numpy array).
-        val_size: Fraction of data to use for validation (default: 0.2).
-        test_size: Optional fraction of data to use for test set (default: None).
-            If provided, creates train/val/test split. If None, uses train/val split only.
-        n_trials: Number of Optuna trials for hyperparameter search (default: 30).
-        random_state: Random seed for reproducibility (default: 42).
-        early_stopping_rounds: Early stopping rounds for LightGBM (default: 50).
-        use_gpu: Whether to use GPU acceleration if available (default: True).
+        X: Training features as pandas DataFrame or numpy array.
+        y: Training labels as pandas Series or numpy array.
+        test_size: Fraction of data to use for test set. Defaults to 0.2.
+        n_trials: Number of Optuna trials for hyperparameter search. Defaults to 30.
+        random_state: Random seed for reproducibility. Defaults to 42.
+        early_stopping_rounds: Number of rounds with no improvement to trigger early
+            stopping. Defaults to 50.
+        use_gpu: Whether to use GPU acceleration if available. Defaults to True.
         
     Returns:
-        tuple: (best_model, best_params, X_va, y_va, hist_df, plot_paths) or
-               (best_model, best_params, X_va, y_va, X_test, y_test, hist_df, plot_paths) if test_size is provided
-            - best_model: Trained LightGBM classifier with best parameters
-            - best_params: Dictionary of best hyperparameters found
-            - X_va: Validation features
-            - y_va: Validation labels
-            - X_test: Test features (only if test_size is provided)
-            - y_test: Test labels (only if test_size is provided)
-            - hist_df: DataFrame of hyperparameter trial history
-            - plot_paths: List of Paths to diagnostic plots
+        tuple: A tuple containing:
+            best_model: Trained LightGBM classifier with best parameters
+            best_params: Dictionary of best hyperparameters found
+            X_va: Validation features
+            y_va: Validation labels
+            hist_df: DataFrame containing trial history with parameters and scores
+            plot_paths: List of Paths to hyperparameter visualization plots
+    
+    Raises:
+        ValueError: If no successful trials complete or best parameters are missing
+            required keys.
+    
+    Example:
+        >>> from sklearn.datasets import make_classification
+        >>> X, y = make_classification(n_samples=1000, random_state=42)
+        >>> model, params, X_val, y_val, history, plots = train_lgbm_optuna(X, y)
+        >>> print(f"Best PR-AUC: {history['score'].max():.4f}")
+    
+    Note:
+        Hyperparameters optimized include:
+        - num_leaves: [16, 256]
+        - max_depth: [10, 20]
+        - learning_rate: [0.01, 0.3] log-uniform
+        - feature_fraction: [0.6, 1.0]
+        - bagging_fraction: [0.6, 1.0]
+        - bagging_freq: [1, 10]
+        - min_child_samples: [10, 100]
+        - lambda_l1: [1e-8, 10.0] log-uniform
+        - lambda_l2: [1e-8, 10.0] log-uniform
     """
-    if test_size is not None:
-        # Create train/val/test split
-        X_tr, X_temp, y_tr, y_temp = train_test_split(
-            X, y, test_size=(val_size + test_size), stratify=y, random_state=random_state
-        )
-        # Split temp into val and test
-        val_ratio = val_size / (val_size + test_size)
-        X_va, X_test, y_va, y_test = train_test_split(
-            X_temp, y_temp, test_size=(1 - val_ratio), stratify=y_temp, random_state=random_state
-        )
-    else:
-        # Standard train/val split
-        X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=val_size, stratify=y, random_state=random_state)
-        X_test, y_test = None, None
+    # Standard train/val split
+    X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=test_size, stratify=y, random_state=random_state)
 
     trial_history = []  # we'll collect params and scores here
     
@@ -716,20 +827,44 @@ def train_lgbm_optuna(X, y, val_size=0.2, test_size=None, n_trials=30, random_st
         }
         model = lgb.LGBMClassifier(**params, n_estimators=500)
         try:
-            model.fit(X_tr, y_tr,
-                    eval_set=[(X_va, y_va)],
+            # 5-fold cross-validation
+            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+            cv_scores = []
+            cv_training_scores = []
+            
+            for train_idx, val_idx in cv.split(X_tr, y_tr):
+                X_train_fold, X_val_fold = X_tr.iloc[train_idx], X_tr.iloc[val_idx]
+                y_train_fold, y_val_fold = y_tr.iloc[train_idx], y_tr.iloc[val_idx]
+
+                model.fit(
+                    X_train_fold, y_train_fold,
+                    eval_set=[(X_val_fold, y_val_fold)],
                     eval_metric="average_precision",
-                    callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)])
-            y_pred = model.predict_proba(X_va)[:, 1]
-            score = average_precision_score(y_va, y_pred)
-            y_pred_train = model.predict_proba(X_tr)[:, 1]
-            training_score = average_precision_score(y_tr, y_pred_train)
-            # record params + score for later plotting
-            rec = params.copy()
-            rec["score"] = score
-            rec["trial_number"] = trial.number
-            rec["training_score"] = training_score
-            trial_history.append(rec)
+                    callbacks=[lgb.early_stopping(stopping_rounds=early_stopping_rounds, verbose=False)]
+                )
+                
+                # Evaluate fold
+                y_prob = model.predict_proba(X_val_fold)[:, 1]
+                fold_score = average_precision_score(y_val_fold, y_prob)
+                cv_scores.append(fold_score)
+                
+                # Training score for this fold
+                y_prob_train = model.predict_proba(X_train_fold)[:, 1]
+                train_score = average_precision_score(y_train_fold, y_prob_train)
+                cv_training_scores.append(train_score)
+            
+            # Average scores across folds
+            score = np.mean(cv_scores)
+            train_score = np.mean(cv_training_scores)
+            
+            # Record trial results including CV stats
+            trial_history.append({
+                **params,
+                "score": score,
+                "training_score": train_score,
+                "cv_scores": cv_scores,
+                "cv_std": np.std(cv_scores)
+            })
         except Exception as e:
             score = 0.0
             print(f"[WARN] Trial {trial.number} failed with error: {e}")
@@ -793,10 +928,7 @@ def train_lgbm_optuna(X, y, val_size=0.2, test_size=None, n_trials=30, random_st
         if path_maybe is not None:
             plot_paths.append(path_maybe)
 
-    if test_size is not None:
-        return best_model, best_params, X_va, y_va, X_test, y_test, hist_df, plot_paths
-    else:
-        return best_model, best_params, X_va, y_va, hist_df, plot_paths
+    return best_model, best_params, X_va, y_va, hist_df, plot_paths
 
 def train_best_base_models_from_mlflow(
     X: pd.DataFrame,
@@ -810,7 +942,46 @@ def train_best_base_models_from_mlflow(
     early_stopping_rounds: int = 50,
     use_gpu: bool = True,
 ) -> tuple:
-    """Load best models from MLflow and retrain them on the current dataset."""
+    """Load the best performing models from MLflow and retrain them on new data.
+    
+    Searches MLflow for the best XGBoost, CatBoost, and LightGBM models based on
+    their performance metric, loads their optimal hyperparameters, and retrains
+    them on the provided dataset.
+    
+    Args:
+        X: Feature DataFrame for training/validation/testing.
+        y: Target Series with binary labels.
+        experiment_name: Name of MLflow experiment to search.
+        val_size: Fraction of data for validation. Defaults to 0.2.
+        test_size: Optional fraction for test set. If None, uses train/val split only.
+        metric: Metric to use for finding best models. Defaults to "pr_auc".
+        random_state: Seed for reproducibility. Defaults to 42.
+        tracking_uri: MLflow tracking URI. Defaults to "mlruns".
+        early_stopping_rounds: Early stopping rounds. Defaults to 50.
+        use_gpu: Whether to use GPU acceleration. Defaults to True.
+        
+    Returns:
+        tuple: Contains:
+            base_models: Dict mapping model types to trained models
+            X_tr: Training features
+            X_va: Validation features
+            y_tr: Training labels
+            y_va: Validation labels
+            X_test: Test features (if test_size provided, else None)
+            y_test: Test labels (if test_size provided, else None)
+            best_params_dict: Dict mapping model types to their best parameters
+            
+    Raises:
+        ValueError: If experiment not found or no models were successfully trained.
+        
+    Example:
+        >>> models, X_tr, X_va, y_tr, y_va, _, _, params = train_best_base_models_from_mlflow(
+        ...     X=features_df,
+        ...     y=target_series,
+        ...     experiment_name="fraud_detection_v1"
+        ... )
+        >>> print(f"Loaded {len(models)} best models from MLflow")
+        """
     
     mlf.set_tracking_uri(tracking_uri)
     experiment = mlf.get_experiment_by_name(experiment_name)
@@ -937,7 +1108,60 @@ def train_ensemble(
     n_trials: int = 30,
     random_state: int = 42,
 ):
-    """Train Optuna-tuned logistic regression meta-learner using base model predictions."""
+    """Train an ensemble model by stacking base models with a logistic regression meta-learner.
+    
+    Uses Optuna to optimize a logistic regression model that combines predictions from base models
+    (XGBoost, CatBoost, LightGBM). The meta-learner's hyperparameters are tuned to maximize PR-AUC.
+    
+    Args:
+        base_models: Dictionary mapping model names to trained base classifiers.
+        X_tr: Training feature DataFrame.
+        y_tr: Training label Series.
+        X_va: Validation feature DataFrame.
+        y_va: Validation label Series.
+        X_test: Test feature DataFrame or None.
+        y_test: Test label Series or None.
+        n_trials: Number of Optuna trials for meta-learner optimization. Defaults to 30.
+        random_state: Random seed for reproducibility. Defaults to 42.
+        
+    Returns:
+        If X_test is not None:
+            tuple containing:
+                ensemble: Trained meta-learner model
+                base_models: Dictionary of base models
+                X_meta_val: Meta-features for validation set
+                y_va: Validation labels
+                X_meta_test: Meta-features for test set
+                y_test: Test labels
+                best_params: Meta-learner's best hyperparameters
+                hist_df: DataFrame of optimization trial history
+                plot_paths: List of Paths to hyperparameter plots
+        Else:
+            tuple containing first 7 elements listed above
+            
+    Raises:
+        ValueError: If solver-penalty combination is invalid.
+        
+    Example:
+        >>> ensemble, models, X_val, y_val, params, history, plots = train_ensemble(
+        ...     base_models={"xgb": xgb_model, "lgbm": lgbm_model},
+        ...     X_tr=train_features,
+        ...     y_tr=train_labels,
+        ...     X_va=val_features,
+        ...     y_va=val_labels,
+        ...     X_test=None,
+        ...     y_test=None
+        ... )
+        >>> print(f"Ensemble validation PR-AUC: {average_precision_score(y_val, ensemble.predict_proba(X_val)[:, 1]):.4f}")
+    
+    Note:
+        The meta-learner is optimized for:
+        - Regularization strength (C)
+        - Penalty type (l1, l2, elasticnet)
+        - Solver algorithm
+        - Class weights
+        - L1 ratio (for elasticnet only)
+    """
     
     print("[INFO] Generating meta-features...")
     # Build train meta features
