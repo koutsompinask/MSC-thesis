@@ -69,7 +69,8 @@ def select_important_features(
         subsample=0.8,
         colsample_bytree=0.8,
         random_state=42,
-        n_jobs=-1
+        n_jobs=-1,
+        categorical_feature=X.select_dtypes(include=['category', 'object']).columns.tolist()
     )
     model.fit(X, y)
 

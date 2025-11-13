@@ -1,0 +1,14 @@
+artifact_uri: file:c:/Developer/MSC-thesis/mlruns/266162046764656308/34843936e5bc4dedb685e2c9b923cd7d/artifacts
+end_time: 1762704547074
+entry_point_name: ''
+experiment_id: '266162046764656308'
+lifecycle_stage: active
+run_id: 34843936e5bc4dedb685e2c9b923cd7d
+run_name: XGBoost_Optuna_fullfeatures
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1762704475994
+status: 3
+tags: []
+user_id: ppapa

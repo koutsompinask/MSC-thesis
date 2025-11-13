@@ -18,6 +18,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import shap
 import optuna
+from optuna.pruners import MedianPruner
 import mlflow as mlf
 import mlflow.xgboost as mlf_xgboost, mlflow.catboost as mlf_catboost, mlflow.lightgbm as mlf_lightgbm, mlflow.sklearn as mlf_sklearn
 from pathlib import Path
@@ -27,9 +28,6 @@ from sklearn.metrics import (
     roc_curve,
     average_precision_score,
     auc,
-    f1_score,
-    precision_score,
-    recall_score,
     precision_recall_fscore_support,
     precision_recall_curve,
     confusion_matrix,
@@ -69,11 +67,12 @@ def _gpu_available() -> bool:
     except Exception:
         return False
 
-def _scale_pos_weight(y: np.ndarray) -> float:
+def _scale_pos_weight(y: np.ndarray, factor = 1.0) -> float:
     """Calculate scaling factor for positive class weight in imbalanced datasets.
     
     Args:
         y: Array of binary labels (0 or 1).
+        factor: Multiplier factor to adjust the scale of the weight. Defaults to 1.
         
     Returns:
         float: Ratio of negative to positive samples, used to balance class weights.
@@ -85,7 +84,7 @@ def _scale_pos_weight(y: np.ndarray) -> float:
     """
     pos = np.sum(y == 1)
     neg = np.sum(y == 0)
-    return float(neg / max(1, pos))
+    return factor*float(neg / max(1, pos))
 
 
 def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path) -> dict[str, Path]:
@@ -174,6 +173,20 @@ def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path) -> di
     paths["confusion_matrix"] = p
 
     return paths
+
+def eval_function(y_true, y_prob) -> float:
+    """
+    Custom evaluation function combining false negatives and false positives.
+    """
+    fp = np.sum((y_true == 0) & (y_prob >= 0.5))
+    fn = np.sum((y_true == 1) & (y_prob < 0.5))
+    return (100*fn + fp)/len(y_true)
+
+def eval_function_lgbm(y_true, y_prob) -> tuple[str, float, bool]:
+    """
+    Custom evaluation function wrapper for LightGBM.
+    """
+    return ('fraud_cost', eval_function(y_true, y_prob), False)
 
 # ---------------------------
 #  UNIVERSAL EVALUATION LOGIC
@@ -271,6 +284,7 @@ def evaluate_and_log(
         # --- Metrics ---
         roc_auc = roc_auc_score(y_va, y_prob)
         pr_auc = average_precision_score(y_va, y_prob)
+        custom_loss = eval_function(y_va, y_prob)
         precision, recall, f1, _ = precision_recall_fscore_support(y_va, y_pred, average="binary")
         metrics = {
             "roc_auc": roc_auc,
@@ -278,6 +292,7 @@ def evaluate_and_log(
             "precision": precision,
             "recall": recall,
             "f1": f1,
+            "custom_loss": custom_loss
         }
         mlf.log_metrics(metrics)
         print(f"[INFO] Logged metrics: {metrics}")
@@ -331,21 +346,20 @@ def evaluate_and_log(
         plt.close()
 
         # --- Log Model ---
-        input_example = X_va.iloc[:5]
         try:
             # Prefer generic API when available
-            mlf.log_model(model, name="model", input_example=input_example)
+            mlf.log_model(model, name="model")
         except Exception:
             # Fallback to flavor-specific APIs
             try:
                 if model_type == "xgboost":
-                    mlf_xgboost.log_model(model, name="model", input_example=input_example)
+                    mlf_xgboost.log_model(model, name="model")
                 elif model_type == "catboost":
-                    mlf_catboost.log_model(model, name="model", input_example=input_example)
+                    mlf_catboost.log_model(model, name="model")
                 elif model_type == "lightgbm":
-                    mlf_lightgbm.log_model(model, name="model", input_example=input_example)
+                    mlf_lightgbm.log_model(model, name="model")
                 else:
-                    mlf_sklearn.log_model(model, name="model", input_example=input_example)
+                    mlf_sklearn.log_model(model, name="model")
             except Exception as e:
                 print(f"[WARN] Could not log model: {e}")
         
@@ -488,6 +502,7 @@ def train_xgb_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     trial_history = []  # we'll collect params and scores here
     
     def objective(trial):
+        factor = trial.suggest_float("weight_factor", 100.0, 1000.0)
         params = {
             "n_estimators": 500,
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
@@ -498,8 +513,8 @@ def train_xgb_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
             "gamma": trial.suggest_float("gamma", 0, 5),
             "tree_method": "gpu_hist" if  _gpu_available() and use_gpu else "hist",
             "objective": "binary:logistic",
-            "eval_metric": "aucpr",
-            "scale_pos_weight": _scale_pos_weight(y_tr),
+            "eval_metric": eval_function,
+            "scale_pos_weight": _scale_pos_weight(y_tr, factor),
             "n_jobs": -1,
             "random_state": random_state,
         }
@@ -513,7 +528,7 @@ def train_xgb_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
                 X_train_fold, X_val_fold = X_tr.iloc[train_idx], X_tr.iloc[val_idx]
                 y_train_fold, y_val_fold = y_tr.iloc[train_idx], y_tr.iloc[val_idx]
                 
-                model = xgb.XGBClassifier(**params, early_stopping_rounds=early_stopping_rounds)
+                model = xgb.XGBClassifier(**params, early_stopping_rounds=early_stopping_rounds, enable_categorical=True)
                 model.fit(
                     X_train_fold, y_train_fold,
                     eval_set=[(X_val_fold, y_val_fold)],
@@ -522,12 +537,12 @@ def train_xgb_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
                 
                 # Evaluate fold
                 y_prob = model.predict_proba(X_val_fold)[:, 1]
-                fold_score = average_precision_score(y_val_fold, y_prob)
+                fold_score = eval_function(y_val_fold, y_prob)
                 cv_scores.append(fold_score)
                 
                 # Training score for this fold
                 y_prob_train = model.predict_proba(X_train_fold)[:, 1]
-                train_score = average_precision_score(y_train_fold, y_prob_train)
+                train_score = eval_function(y_train_fold, y_prob_train)
                 cv_training_scores.append(train_score)
             
             # Average scores across folds
@@ -540,18 +555,19 @@ def train_xgb_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
                 "score": score,
                 "training_score": train_score,
                 "cv_scores": cv_scores,
-                "cv_std": np.std(cv_scores)
+                "cv_std": np.std(cv_scores),
+                "weight_factor": factor
             })
         except Exception as e:
             score = 0.0
             print(f"[WARN] Trial {trial.number} failed with error: {e}")
         return score
 
-    study = optuna.create_study(direction="maximize", study_name="xgboost_pr_auc_optimization")
+    study = optuna.create_study(direction="minimize", study_name="xgboost_customloss_optimization", pruner=MedianPruner(n_startup_trials=5, n_warmup_steps=10, interval_steps=5))
     with tqdm(total=n_trials, desc="[Optuna XGBoost Tuning]", unit="trial") as pbar:
         def _tqdm_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
             pbar.update(1)
-            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={trial.value:.4f}")
+            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} loss={trial.value:.4f}")
         study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], show_progress_bar=False, gc_after_trial=True)
     
     # Check if any trials succeeded
@@ -574,13 +590,12 @@ def train_xgb_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     best_params_final["n_estimators"] = 1000
     best_params_final["tree_method"] = "gpu_hist" if _gpu_available() and use_gpu else "hist"
     best_params_final["objective"] = "binary:logistic"
-    best_params_final["eval_metric"] = "aucpr"
     best_params_final["scale_pos_weight"] = _scale_pos_weight(y_tr)
     best_params_final["n_jobs"] = -1
     best_params_final["random_state"] = random_state
     best_params_final["verbosity"] = 0
     
-    best_model = xgb.XGBClassifier(**best_params_final, early_stopping_rounds=early_stopping_rounds)
+    best_model = xgb.XGBClassifier(**best_params_final, early_stopping_rounds=early_stopping_rounds, enable_categorical=True)
     best_model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
     
     # Update best_params to include n_estimators for logging consistency
@@ -593,7 +608,7 @@ def train_xgb_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     plots_dir = Path("hp_search_plots/xgb")
     plot_paths = []
     for p in ["learning_rate", "max_depth", "subsample", "colsample_bytree",
-              "min_child_weight", "gamma"]:
+              "min_child_weight", "gamma", "weight_factor"]:
         path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
         if path_maybe is not None:
             plot_paths.append(path_maybe)
@@ -634,8 +649,10 @@ def train_catboost_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     # Standard train/val split
     X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=test_size, stratify=y, random_state=random_state)
     trial_history = []  # we'll collect params and scores here
+    categorical_features = X.select_dtypes(include=['category', 'object']).columns.tolist()
 
     def objective(trial):
+        factor = trial.suggest_float("weight_factor", 100.0, 1000.0)
         params = {
             "iterations": 500,
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
@@ -643,13 +660,13 @@ def train_catboost_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
             "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1, 10),
             "subsample": trial.suggest_float("subsample", 0.5, 1.0),
             "border_count": trial.suggest_int("border_count", 32, 255),
-            "eval_metric": "PRAUC",
+            "eval_metric": "Recall",
             "task_type": "GPU" if  _gpu_available() and use_gpu else "CPU",
             "verbose": False,
-            "scale_pos_weight": _scale_pos_weight(y_tr),
+            "scale_pos_weight": _scale_pos_weight(y_tr, factor),
             "random_state": random_state,
         }
-        model = CatBoostClassifier(**params)
+        model = CatBoostClassifier(**params, cat_features=categorical_features)
         try:
             # 5-fold cross-validation
             cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
@@ -666,15 +683,14 @@ def train_catboost_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
                     early_stopping_rounds=early_stopping_rounds,
                     verbose=False
                 )
-                
                 # Evaluate fold
                 y_prob = model.predict_proba(X_val_fold)[:, 1]
-                fold_score = average_precision_score(y_val_fold, y_prob)
+                fold_score = eval_function(y_val_fold, y_prob)
                 cv_scores.append(fold_score)
                 
                 # Training score for this fold
                 y_prob_train = model.predict_proba(X_train_fold)[:, 1]
-                train_score = average_precision_score(y_train_fold, y_prob_train)
+                train_score = eval_function(y_train_fold, y_prob_train)
                 cv_training_scores.append(train_score)
             
             # Average scores across folds
@@ -687,18 +703,19 @@ def train_catboost_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
                 "score": score,
                 "training_score": train_score,
                 "cv_scores": cv_scores,
-                "cv_std": np.std(cv_scores)
+                "cv_std": np.std(cv_scores),
+                "weight_factor": factor
             })
         except Exception as e:
             score = 0.0
             print(f"[WARN] Trial {trial.number} failed with error: {e}")
         return score
 
-    study = optuna.create_study(direction="maximize", study_name="catboost_pr_auc_optimization")
+    study = optuna.create_study(direction="minimize", study_name="catboost_custom_cost_optimization")
     with tqdm(total=n_trials, desc="[Optuna CatBoost Tuning]", unit="trial") as pbar:
         def _tqdm_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
             pbar.update(1)
-            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} PR-AUC={trial.value:.4f}")
+            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} score={trial.value:.4f}")
         study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], show_progress_bar=False, gc_after_trial=True)
     
     # Check if any trials succeeded
@@ -726,9 +743,9 @@ def train_catboost_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     
     best_model = CatBoostClassifier(**best_params_final)
     best_model.fit(X_tr, y_tr, eval_set=(X_va, y_va),
-                   cat_features=cat_features,
                    early_stopping_rounds=early_stopping_rounds,
-                   verbose=False)
+                   verbose=False,
+                   cat_features=categorical_features)
     
     # Update best_params to include iterations for logging consistency
     best_params["iterations"] = 1000
@@ -742,7 +759,7 @@ def train_catboost_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     hist_df = pd.DataFrame(trial_history)
     plots_dir = Path("hp_search_plots/cat")
     plot_paths = []
-    for p in ["learning_rate", "depth", "subsample", "l2_leaf_reg", "border_count"]:
+    for p in ["learning_rate", "depth", "subsample", "l2_leaf_reg", "border_count","weight_factor"]:
         path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
         if path_maybe is not None:
             plot_paths.append(path_maybe)
@@ -805,11 +822,11 @@ def train_lgbm_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=test_size, stratify=y, random_state=random_state)
 
     trial_history = []  # we'll collect params and scores here
-    
+    categorical_features = X.select_dtypes(include=['category', 'object']).columns.tolist()
     def objective(trial):
+        factor = trial.suggest_float("weight_factor", 100.0, 1000.0)
         params = {
             "objective": "binary",
-            "metric": "average_precision",
             "verbosity": -1,
             "boosting_type": "gbdt",
             "num_leaves": trial.suggest_int("num_leaves", 16, 256),
@@ -823,9 +840,9 @@ def train_lgbm_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
             "lambda_l2": trial.suggest_float("lambda_l2", 1e-8, 10.0, log=True),
             "device": "gpu" if  _gpu_available() and use_gpu else "cpu",
             "random_state": random_state,
-            "scale_pos_weight": _scale_pos_weight(y_tr),
+            "scale_pos_weight": _scale_pos_weight(y_tr, factor),
         }
-        model = lgb.LGBMClassifier(**params, n_estimators=500)
+        model = lgb.LGBMClassifier(**params, n_estimators=500, categorical_feature=categorical_features)
         try:
             # 5-fold cross-validation
             cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
@@ -839,18 +856,18 @@ def train_lgbm_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
                 model.fit(
                     X_train_fold, y_train_fold,
                     eval_set=[(X_val_fold, y_val_fold)],
-                    eval_metric="average_precision",
+                    eval_metric=eval_function_lgbm,
                     callbacks=[lgb.early_stopping(stopping_rounds=early_stopping_rounds, verbose=False)]
                 )
                 
                 # Evaluate fold
                 y_prob = model.predict_proba(X_val_fold)[:, 1]
-                fold_score = average_precision_score(y_val_fold, y_prob)
+                fold_score = eval_function(y_val_fold, y_prob)
                 cv_scores.append(fold_score)
                 
                 # Training score for this fold
                 y_prob_train = model.predict_proba(X_train_fold)[:, 1]
-                train_score = average_precision_score(y_train_fold, y_prob_train)
+                train_score = eval_function(y_train_fold, y_prob_train)
                 cv_training_scores.append(train_score)
             
             # Average scores across folds
@@ -863,7 +880,8 @@ def train_lgbm_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
                 "score": score,
                 "training_score": train_score,
                 "cv_scores": cv_scores,
-                "cv_std": np.std(cv_scores)
+                "cv_std": np.std(cv_scores),
+                "weight_factor": factor
             })
         except Exception as e:
             score = 0.0
@@ -871,7 +889,7 @@ def train_lgbm_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
 
         return score
 
-    study = optuna.create_study(direction="maximize", study_name="lgbm_pr_auc_optimization")
+    study = optuna.create_study(direction="minimize", study_name="lgbm_custom_cost_optimization")
     with tqdm(total=n_trials, desc="[Optuna LightGBM Tuning]", unit="trial") as pbar:
         def _tqdm_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
             pbar.update(1)
@@ -904,7 +922,7 @@ def train_lgbm_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     best_params_final["scale_pos_weight"] = _scale_pos_weight(y_tr)
     best_params_final["random_state"] = random_state
     
-    best_model = lgb.LGBMClassifier(**best_params_final)
+    best_model = lgb.LGBMClassifier(**best_params_final, categorical_feature=categorical_features)
     best_model.fit(X_tr, y_tr,
                    eval_set=[(X_va, y_va)],
                    eval_metric="average_precision",
@@ -920,7 +938,7 @@ def train_lgbm_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     plots_dir = Path("hp_search_plots/lgbm")
     plot_paths = []
     for p in ["learning_rate", "max_depth", "num_leaves", "feature_fraction",
-              "bagging_fraction", "bagging_freq", "min_child_samples", "lambda_l1", "lambda_l2"]:
+              "bagging_fraction", "bagging_freq", "min_child_samples", "lambda_l1", "lambda_l2", "weight_factor"]:
         path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
         if path_maybe is not None:
             plot_paths.append(path_maybe)
@@ -981,7 +999,7 @@ def train_best_base_models_from_mlflow(
         ...     experiment_name="fraud_detection_v1"
         ... )
         >>> print(f"Loaded {len(models)} best models from MLflow")
-        """
+    """
     
     mlf.set_tracking_uri(tracking_uri)
     experiment = mlf.get_experiment_by_name(experiment_name)
