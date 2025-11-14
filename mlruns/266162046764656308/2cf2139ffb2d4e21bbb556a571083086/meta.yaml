@@ -1,8 +1,9 @@
 artifact_uri: file:c:/Developer/MSC-thesis/mlruns/266162046764656308/2cf2139ffb2d4e21bbb556a571083086/artifacts
+deleted_time: 1763131140555
 end_time: 1762646646446
 entry_point_name: ''
 experiment_id: '266162046764656308'
-lifecycle_stage: active
+lifecycle_stage: deleted
 run_id: 2cf2139ffb2d4e21bbb556a571083086
 run_name: Ensemble_from_best_base_models
 source_name: ''

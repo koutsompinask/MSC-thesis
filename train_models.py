@@ -740,6 +740,7 @@ def train_catboost_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     best_params_final["scale_pos_weight"] = _scale_pos_weight(y_tr)
     best_params_final["random_seed"] = random_state
     best_params_final["verbose"] = False
+    best_params_final.pop("weight_factor", None)  # remove weight_factor from final params
     
     best_model = CatBoostClassifier(**best_params_final)
     best_model.fit(X_tr, y_tr, eval_set=(X_va, y_va),
@@ -1073,7 +1074,7 @@ def train_best_base_models_from_mlflow(
                 "n_jobs": -1,
                 "random_state": random_state,
             })
-            model = xgb.XGBClassifier(**xgb_params, early_stopping_rounds=early_stopping_rounds)
+            model = xgb.XGBClassifier(**xgb_params, early_stopping_rounds=early_stopping_rounds, enable_categorical=True)
             model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
             base_models["xgboost"] = model
 
@@ -1106,7 +1107,8 @@ def train_best_base_models_from_mlflow(
             model.fit(
                 X_tr, y_tr, eval_set=[(X_va, y_va)],
                 eval_metric="average_precision",
-                callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)]
+                callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)],
+                categorical_feature=[c for c in X_tr.select_dtypes(include=['category', 'object']).columns] or None
             )
             base_models["lightgbm"] = model
 

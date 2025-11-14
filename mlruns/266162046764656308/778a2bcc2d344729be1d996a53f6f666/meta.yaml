@@ -1,8 +1,9 @@
 artifact_uri: file:c:/Developer/MSC-thesis/mlruns/266162046764656308/778a2bcc2d344729be1d996a53f6f666/artifacts
+deleted_time: 1763131140532
 end_time: 1762829225361
 entry_point_name: ''
 experiment_id: '266162046764656308'
-lifecycle_stage: active
+lifecycle_stage: deleted
 run_id: 778a2bcc2d344729be1d996a53f6f666
 run_name: XGBoost_Optuna_fullfeatures
 source_name: ''

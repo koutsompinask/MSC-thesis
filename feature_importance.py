@@ -115,13 +115,18 @@ def select_important_features(
     if remove_correlated:
         if verbose:
             print(f"[INFO] Performing correlation pruning (threshold={correlation_threshold})...")
-        corr_matrix = X_reduced.corr().abs()
-        upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-        to_drop = [col for col in upper.columns if any(upper[col] > correlation_threshold)]
-        if verbose and len(to_drop) > 0:
-            print(f"[INFO] Dropping {len(to_drop)} correlated features.")
-        X_reduced.drop(columns=to_drop, inplace=True, errors="ignore")
-        selected_features = [f for f in selected_features if f not in to_drop]
+        # Only compute correlation on numeric columns (categorical/object columns can't be correlated)
+        numeric_cols = X_reduced.select_dtypes(include=[np.number]).columns.tolist()
+        if len(numeric_cols) > 0:
+            corr_matrix = X_reduced[numeric_cols].corr().abs()
+            upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            to_drop = [col for col in upper.columns if any(upper[col] > correlation_threshold)]
+            if verbose and len(to_drop) > 0:
+                print(f"[INFO] Dropping {len(to_drop)} correlated features.")
+            X_reduced.drop(columns=to_drop, inplace=True, errors="ignore")
+            selected_features = [f for f in selected_features if f not in to_drop]
+        elif verbose:
+            print(f"[INFO] No numeric columns found for correlation pruning.")
 
     # --- Final feature summary ---
     importance_df["selected"] = importance_df["feature"].isin(selected_features)

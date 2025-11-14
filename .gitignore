@@ -4,3 +4,7 @@
 *.pyc
 mlruns/**/models/**
 *txt
+!requirements.txt
+hp_search_artifacts
+hp_search_plots
+catboost_info

@@ -1,0 +1,14 @@
+artifact_uri: file:c:/Developer/MSC-thesis/mlruns/266162046764656308/174782aaa47a4e56b3465ee50625a205/artifacts
+end_time: 1763123024104
+entry_point_name: ''
+experiment_id: '266162046764656308'
+lifecycle_stage: active
+run_id: 174782aaa47a4e56b3465ee50625a205
+run_name: CATboost_Optuna_fullfeatures
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1763122473813
+status: 3
+tags: []
+user_id: ppapa
