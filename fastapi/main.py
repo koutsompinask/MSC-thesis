@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends
 import mlflow.pyfunc
+from pathlib import Path
 from config import API_KEY, API_KEY_NAME
 from model import PredictionRequest
 from fastapi.security.api_key import APIKeyHeader
@@ -16,7 +17,7 @@ def authenticate(api_key: str = Security(api_key_header)):
 
 import mlflow.pyfunc
 
-MODEL_PATH = "/home/kkout/Workspaces/MSC-thesis/mlruns/266162046764656308/models/m-9daf2e7529b64c69aa55be1aa8ed5bd6/artifacts"
+MODEL_PATH = "file:../mlruns/298866245379007145/models/m-d891c555aaef4e08a28d0712943f4eba"
 
 print("Loading MLflow model...")
 ml_model = mlflow.pyfunc.load_model(MODEL_PATH)
@@ -30,7 +31,6 @@ app = FastAPI(
     description="A FastAPI service for feeding input into an MLflow model.",
     version="1.0.0"
 )
-
 
 # -----------------------------
 # Prediction Endpoint

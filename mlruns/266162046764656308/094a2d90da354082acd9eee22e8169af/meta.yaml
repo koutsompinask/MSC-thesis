@@ -1,0 +1,14 @@
+artifact_uri: file:c:/Developer/MSC-thesis/mlruns/266162046764656308/094a2d90da354082acd9eee22e8169af/artifacts
+end_time: 1763268645629
+entry_point_name: ''
+experiment_id: '266162046764656308'
+lifecycle_stage: active
+run_id: 094a2d90da354082acd9eee22e8169af
+run_name: NN_Ensemble_from_best_base_models
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1763268645549
+status: 4
+tags: []
+user_id: ppapa

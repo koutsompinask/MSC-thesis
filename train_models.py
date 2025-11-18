@@ -1334,3 +1334,325 @@ def train_ensemble(
             return ensemble, base_models, X_meta_val, y_va, X_meta_test, y_test, best_params_log, hist_df, plot_paths
         else:
             return ensemble, base_models, X_va, y_va, best_params_log, hist_df, plot_paths
+
+def train_neural_network_ensemble(
+    base_models: dict,
+    X_tr: pd.DataFrame,
+    y_tr: pd.Series,
+    X_va: pd.DataFrame,
+    y_va: pd.Series,
+    X_test: pd.DataFrame | None = None,
+    y_test: pd.Series | None = None,
+    n_trials: int = 30,
+    epochs: int = 100,
+    batch_size: int = 32,
+    random_state: int = 42,
+    device: str = "cpu",
+):
+    """Train a PyTorch neural network meta-learner on base model predictions.
+    
+    Uses Optuna to optimize a multi-layer perceptron (MLP) that combines predictions 
+    from base models (XGBoost, CatBoost, LightGBM). The meta-learner's architecture 
+    and training hyperparameters are tuned using custom loss function (eval_function).
+    
+    Args:
+        base_models: Dictionary mapping model names to trained base classifiers.
+        X_tr: Training feature DataFrame.
+        y_tr: Training label Series.
+        X_va: Validation feature DataFrame.
+        y_va: Validation label Series.
+        X_test: Optional test feature DataFrame. Defaults to None.
+        y_test: Optional test label Series. Defaults to None.
+        n_trials: Number of Optuna trials for hyperparameter optimization. Defaults to 30.
+        epochs: Number of training epochs per trial. Defaults to 100.
+        batch_size: Batch size for training. Defaults to 32.
+        random_state: Random seed for reproducibility. Defaults to 42.
+        device: Device to use for training ("cpu" or "cuda"). Defaults to "cpu".
+        
+    Returns:
+        If X_test is not None:
+            tuple containing:
+                best_model: Trained PyTorch neural network
+                base_models: Dictionary of base models
+                X_meta_val: Meta-features (predictions) for validation set
+                y_va: Validation labels
+                X_meta_test: Meta-features (predictions) for test set
+                y_test: Test labels
+                best_params: Neural network's best hyperparameters
+                hist_df: DataFrame of optimization trial history
+                plot_paths: List of Paths to hyperparameter visualization plots
+        Else:
+            tuple containing first 7 elements listed above
+            
+    Raises:
+        ImportError: If PyTorch is not installed.
+        ValueError: If no successful trials complete or if base_models is empty.
+        
+    Example:
+        >>> model, base_mdls, X_val, y_val, params, history, plots = train_neural_network_ensemble(
+        ...     base_models={"xgb": xgb_model, "lgbm": lgbm_model},
+        ...     X_tr=train_features,
+        ...     y_tr=train_labels,
+        ...     X_va=val_features,
+        ...     y_va=val_labels,
+        ...     X_test=test_features,
+        ...     y_test=test_labels,
+        ...     n_trials=30,
+        ...     epochs=100
+        ... )
+        >>> print(f"Best validation loss: {history['score'].min():.4f}")
+        
+    Note:
+        - The neural network architecture includes:
+          - Input layer: number of base models (typically 3)
+          - Hidden layers: 1-3 layers with 16-256 neurons each
+          - Output layer: 1 neuron (binary classification)
+        - Activation functions: ReLU for hidden layers, Sigmoid for output
+        - Optimizer: Adam (learning rate tuned via Optuna)
+        - Loss: Binary cross-entropy
+        - Custom metric: eval_function (fraud_cost)
+    """
+    try:
+        import torch
+        import torch.nn as nn
+        import torch.optim as optim
+        from torch.utils.data import DataLoader, TensorDataset
+    except ImportError:
+        raise ImportError(
+            "PyTorch is required to use train_neural_network_ensemble. "
+            "Install it with: pip install torch"
+        )
+    
+    np.random.seed(random_state)
+    torch.manual_seed(random_state)
+    
+    if not base_models:
+        raise ValueError("base_models dictionary cannot be empty.")
+    
+    print("[INFO] Generating meta-features from base models...")
+    # Build meta-features (base model predictions)
+    X_meta = np.column_stack([m.predict_proba(X_tr)[:, 1] for m in base_models.values()])
+    X_meta_val = np.column_stack([m.predict_proba(X_va)[:, 1] for m in base_models.values()])
+    
+    # Convert to tensors
+    X_meta_tensor = torch.FloatTensor(X_meta).to(device)
+    y_tr_tensor = torch.FloatTensor(y_tr.values).unsqueeze(1).to(device)
+    X_meta_val_tensor = torch.FloatTensor(X_meta_val).to(device)
+    y_va_tensor = torch.FloatTensor(y_va.values).unsqueeze(1).to(device)
+    
+    # Display base model individual validation scores
+    for name, model in base_models.items():
+        y_pred_val = model.predict_proba(X_va)[:, 1]
+        score = eval_function(y_va.values, y_pred_val)
+        print(f"[INFO] {name} validation custom_loss: {score:.4f}")
+    
+    # Define neural network architecture
+    class MLPEnsemble(nn.Module):
+        def __init__(self, input_size, hidden_sizes, dropout_rate=0.5):
+            super(MLPEnsemble, self).__init__()
+            layers = []
+            prev_size = input_size
+            
+            for hidden_size in hidden_sizes:
+                layers.append(nn.Linear(prev_size, hidden_size))
+                layers.append(nn.ReLU())
+                layers.append(nn.Dropout(dropout_rate))
+                prev_size = hidden_size
+            
+            # Output layer
+            layers.append(nn.Linear(prev_size, 1))
+            layers.append(nn.Sigmoid())
+            
+            self.network = nn.Sequential(*layers)
+        
+        def forward(self, x):
+            return self.network(x)
+    
+    trial_history = []
+    
+    def objective(trial):
+        # Suggest hyperparameters
+        n_layers = trial.suggest_int("n_layers", 1, 3)
+        hidden_sizes = []
+        for i in range(n_layers):
+            hidden_size = trial.suggest_int(f"hidden_size_{i}", 16, 256, log=True)
+            hidden_sizes.append(hidden_size)
+        
+        dropout_rate = trial.suggest_float("dropout_rate", 0.0, 0.5)
+        learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
+        
+        try:
+            # Create model
+            model = MLPEnsemble(
+                input_size=X_meta.shape[1],
+                hidden_sizes=hidden_sizes,
+                dropout_rate=dropout_rate
+            ).to(device)
+            
+            # Setup optimizer and loss
+            optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+            criterion = nn.BCELoss()
+            
+            # Create data loader
+            train_dataset = TensorDataset(X_meta_tensor, y_tr_tensor)
+            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+            
+            best_val_score = float('inf')
+            patience = 15
+            patience_counter = 0
+            
+            # Training loop
+            for epoch in range(epochs):
+                model.train()
+                train_loss = 0.0
+                
+                for X_batch, y_batch in train_loader:
+                    optimizer.zero_grad()
+                    y_pred = model(X_batch)
+                    loss = criterion(y_pred, y_batch)
+                    loss.backward()
+                    optimizer.step()
+                    train_loss += loss.item() * len(X_batch)
+                
+                train_loss /= len(X_meta)
+                
+                # Validation
+                model.eval()
+                with torch.no_grad():
+                    y_val_pred_proba = model(X_meta_val_tensor).cpu().numpy().flatten()
+                    val_score = eval_function(y_va.values, y_val_pred_proba)
+                
+                # Early stopping
+                if val_score < best_val_score:
+                    best_val_score = val_score
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                
+                if patience_counter >= patience:
+                    break
+            
+            # Record trial results
+            trial_history.append({
+                "n_layers": n_layers,
+                "hidden_sizes": str(hidden_sizes),
+                "dropout_rate": dropout_rate,
+                "learning_rate": learning_rate,
+                "weight_decay": weight_decay,
+                "score": best_val_score,
+                "training_loss": train_loss
+            })
+            
+            return best_val_score
+        
+        except Exception as e:
+            print(f"[WARN] Trial {trial.number} failed with error: {e}")
+            return float('inf')
+    
+    print("[INFO] Optimizing neural network meta-learner with Optuna...")
+    study = optuna.create_study(
+        direction="minimize",
+        study_name="neural_network_ensemble_optimization",
+        pruner=MedianPruner(n_startup_trials=5, n_warmup_steps=5, interval_steps=3)
+    )
+    
+    with tqdm(total=n_trials, desc="[Optuna NN Ensemble Tuning]", unit="trial") as pbar:
+        def _tqdm_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+            pbar.update(1)
+            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} loss={trial.value:.4f}")
+        
+        study.optimize(
+            objective,
+            n_trials=n_trials,
+            callbacks=[_tqdm_cb],
+            show_progress_bar=False,
+            gc_after_trial=True
+        )
+    
+    # Check if any trials succeeded
+    if len(trial_history) == 0:
+        raise ValueError("No successful trials completed. All Optuna trials failed.")
+    
+    best_trial = study.best_trial
+    best_params = best_trial.params
+    print(f"[INFO] Best neural network params: {best_params}")
+    
+    # Train final model with best params
+    n_layers = best_params["n_layers"]
+    hidden_sizes = [best_params[f"hidden_size_{i}"] for i in range(n_layers)]
+    dropout_rate = best_params["dropout_rate"]
+    learning_rate = best_params["learning_rate"]
+    weight_decay = best_params["weight_decay"]
+    
+    best_model = MLPEnsemble(
+        input_size=X_meta.shape[1],
+        hidden_sizes=hidden_sizes,
+        dropout_rate=dropout_rate
+    ).to(device)
+    
+    optimizer = optim.Adam(best_model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    criterion = nn.BCELoss()
+    train_dataset = TensorDataset(X_meta_tensor, y_tr_tensor)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    
+    best_model.train()
+    for epoch in range(epochs):
+        for X_batch, y_batch in train_loader:
+            optimizer.zero_grad()
+            y_pred = best_model(X_batch)
+            loss = criterion(y_pred, y_batch)
+            loss.backward()
+            optimizer.step()
+    
+    # Evaluate on validation set
+    best_model.eval()
+    with torch.no_grad():
+        y_va_pred_proba = best_model(X_meta_val_tensor).cpu().numpy().flatten()
+    
+    ensemble_custom_loss = eval_function(y_va.values, y_va_pred_proba)
+    ensemble_pr_auc = average_precision_score(y_va, y_va_pred_proba)
+    ensemble_roc_auc = roc_auc_score(y_va, y_va_pred_proba)
+    
+    print(f"[INFO] Neural network ensemble validation custom_loss: {ensemble_custom_loss:.4f}")
+    print(f"[INFO] Neural network ensemble validation PR-AUC: {ensemble_pr_auc:.4f}")
+    print(f"[INFO] Neural network ensemble validation ROC-AUC: {ensemble_roc_auc:.4f}")
+    
+    X_meta_test = None
+    # Evaluate on test set if available
+    if X_test is not None:
+        test_base_predictions = []
+        for name, model in base_models.items():
+            y_prob = model.predict_proba(X_test)[:, 1]
+            test_base_predictions.append(y_prob)
+        X_meta_test = np.column_stack(test_base_predictions)
+        X_meta_test_tensor = torch.FloatTensor(X_meta_test).to(device)
+        
+        with torch.no_grad():
+            y_test_pred_proba = best_model(X_meta_test_tensor).cpu().numpy().flatten()
+        
+        test_custom_loss = eval_function(y_test.values, y_test_pred_proba)
+        test_pr_auc = average_precision_score(y_test, y_test_pred_proba)
+        test_roc_auc = roc_auc_score(y_test, y_test_pred_proba)
+        
+        print(f"[INFO] Neural network ensemble test custom_loss: {test_custom_loss:.4f}")
+        print(f"[INFO] Neural network ensemble test PR-AUC: {test_pr_auc:.4f}")
+        print(f"[INFO] Neural network ensemble test ROC-AUC: {test_roc_auc:.4f}")
+    
+    # Build history df + plots
+    hist_df = pd.DataFrame(trial_history)
+    plots_dir = Path("hp_search_plots/nn_ensemble")
+    plot_paths = []
+    
+    for p in ["dropout_rate", "learning_rate", "weight_decay"]:
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir, "training_loss")
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+    
+    if X_test is not None:
+        return best_model, base_models, X_meta_val, y_va, X_meta_test, y_test, best_params, hist_df, plot_paths
+    else:
+        return best_model, base_models, X_meta_val, y_va, best_params, hist_df, plot_paths
