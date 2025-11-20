@@ -87,7 +87,7 @@ def _scale_pos_weight(y: np.ndarray, factor = 1.0) -> float:
     return factor*float(neg / max(1, pos))
 
 
-def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path) -> dict[str, Path]:
+def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path, threshold: float = 0.5) -> dict[str, Path]:
     """Generate and save evaluation plots for binary classification results.
     
     Creates and saves three key evaluation plots:
@@ -150,11 +150,11 @@ def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path) -> di
     paths["pr_curve"] = p
 
     # Confusion matrix @ 0.5
-    y_pred = (y_prob >= 0.5).astype(int)
+    y_pred = (y_prob >= threshold).astype(int)
     cm = confusion_matrix(y_true, y_pred)
     plt.figure()
     plt.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
-    plt.title("Confusion Matrix @ 0.5")
+    plt.title(f"Confusion Matrix @ {threshold}")
     plt.colorbar()
     ticks = np.arange(2)
     plt.xticks(ticks, ["Non-Fraud", "Fraud"], rotation=45)
@@ -174,19 +174,39 @@ def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path) -> di
 
     return paths
 
-def eval_function(y_true, y_prob) -> float:
+def eval_function(y_true, y_prob, threshold: float = 0.5) -> float:
+    """Custom evaluation function combining false negatives and false positives.
+    
+    Args:
+        y_true: True binary labels (0 or 1).
+        y_prob: Predicted probabilities for the positive class.
+        threshold: Classification threshold for converting probabilities to binary predictions. Defaults to 0.5.
+        
+    Returns:
+        float: Custom fraud cost metric = (100*FN + FP) / total_samples.
+        
+    Example:
+        >>> y_true = np.array([0, 1, 1, 0])
+        >>> y_prob = np.array([0.1, 0.9, 0.8, 0.3])
+        >>> cost = eval_function(y_true, y_prob, threshold=0.5)
+        >>> print(f"Fraud cost: {cost:.4f}")
     """
-    Custom evaluation function combining false negatives and false positives.
-    """
-    fp = np.sum((y_true == 0) & (y_prob >= 0.5))
-    fn = np.sum((y_true == 1) & (y_prob < 0.5))
+    fp = np.sum((y_true == 0) & (y_prob >= threshold))
+    fn = np.sum((y_true == 1) & (y_prob < threshold))
     return (100*fn + fp)/len(y_true)
 
-def eval_function_lgbm(y_true, y_prob) -> tuple[str, float, bool]:
+def eval_function_lgbm(y_true, y_prob, threshold: float = 0.5) -> tuple[str, float, bool]:
+    """Custom evaluation function wrapper for LightGBM.
+    
+    Args:
+        y_true: True binary labels (0 or 1).
+        y_prob: Predicted probabilities for the positive class.
+        threshold: Classification threshold for converting probabilities to binary predictions. Defaults to 0.5.
+        
+    Returns:
+        tuple: (metric_name, metric_value, is_higher_better) where metric_name is "fraud_cost".
     """
-    Custom evaluation function wrapper for LightGBM.
-    """
-    return ('fraud_cost', eval_function(y_true, y_prob), False)
+    return ('fraud_cost', eval_function(y_true, y_prob, threshold), False)
 
 # ---------------------------
 #  UNIVERSAL EVALUATION LOGIC
@@ -202,11 +222,13 @@ def evaluate_and_log(
     tracking_uri: str = "mlruns",
     hp_search_history: pd.DataFrame | None = None,
     hp_search_plots: list[Path] | None = None,
+    prediction_threshold: float = 0.5,
 ):
     """Evaluate a binary classifier and log comprehensive results to MLflow.
     
     Performs extensive model evaluation including:
-    - Standard metrics (ROC-AUC, PR-AUC, F1, etc.)
+    - Threshold-independent metrics (ROC-AUC, PR-AUC on probabilities)
+    - Threshold-dependent metrics (F1, precision, recall using custom threshold)
     - SHAP feature importance analysis
     - Calibration assessment
     - Performance visualization
@@ -226,14 +248,19 @@ def evaluate_and_log(
         tracking_uri: MLflow tracking URI. Defaults to "mlruns".
         hp_search_history: Optional DataFrame with hyperparameter optimization history.
         hp_search_plots: Optional list of hyperparameter visualization plot paths.
+        prediction_threshold: Classification probability threshold for converting probabilities
+            to binary predictions. Affects F1, precision, recall, custom_loss metrics, and plots.
+            Defaults to 0.5. ROC-AUC and PR-AUC are always computed on probabilities regardless
+            of this threshold.
         
     Returns:
         dict: Performance metrics including:
-            - roc_auc: Area under ROC curve
-            - pr_auc: Area under precision-recall curve
-            - precision: Precision at threshold 0.5
-            - recall: Recall at threshold 0.5
-            - f1: F1 score at threshold 0.5
+            - roc_auc: Area under ROC curve (threshold-independent, on probabilities)
+            - pr_auc: Area under precision-recall curve (threshold-independent, on probabilities)
+            - precision: Precision at specified threshold
+            - recall: Recall at specified threshold
+            - f1: F1 score at specified threshold
+            - custom_loss: Custom fraud cost metric at specified threshold
             
     Example:
         >>> model = XGBClassifier()
@@ -243,14 +270,18 @@ def evaluate_and_log(
         ...     X_va=X_val,
         ...     y_va=y_val,
         ...     experiment_name="fraud_detection",
-        ...     run_name="xgboost_v1"
+        ...     run_name="xgboost_v1",
+        ...     prediction_threshold=0.3
         ... )
         >>> print(f"PR-AUC: {metrics['pr_auc']:.4f}")
+        >>> print(f"Custom loss @ threshold=0.3: {metrics['custom_loss']:.4f}")
         
     Note:
-        SHAP analysis is performed on a balanced subset of validation data
-        (up to 500 samples per class) to keep computation tractable while
-        maintaining class balance.
+        - SHAP analysis is performed on a balanced subset of validation data
+          (up to 500 samples per class) to keep computation tractable.
+        - ROC-AUC and PR-AUC are always computed on predicted probabilities and are 
+          threshold-independent. Only precision, recall, F1, and custom_loss depend on the threshold.
+        - All plots use the specified prediction_threshold for threshold-dependent visualizations.
     """
     # --- Detect model type automatically if not provided ---
     if model_type is None:
@@ -263,6 +294,9 @@ def evaluate_and_log(
             model_type = "lightgbm"
         else:
             model_type = "sklearn"
+
+    if prediction_threshold != 0.5: 
+        run_name = f"{run_name}_threshold_{prediction_threshold}"
 
     mlf.set_tracking_uri(tracking_uri)
     mlf.set_experiment(experiment_name)
@@ -279,12 +313,14 @@ def evaluate_and_log(
             y_prob = model.predict_proba(X_va)[:, 1]
         else:
             y_prob = model.predict(X_va)
-        y_pred = (y_prob >= 0.5).astype(int)
+        y_pred = (y_prob >= prediction_threshold).astype(int)
 
         # --- Metrics ---
+        # ROC-AUC and PR-AUC are computed on probabilities (threshold-independent)
         roc_auc = roc_auc_score(y_va, y_prob)
         pr_auc = average_precision_score(y_va, y_prob)
-        custom_loss = eval_function(y_va, y_prob)
+        # Custom loss and classification metrics use the specified threshold
+        custom_loss = eval_function(y_va, y_prob, threshold=prediction_threshold)
         precision, recall, f1, _ = precision_recall_fscore_support(y_va, y_pred, average="binary")
         metrics = {
             "roc_auc": roc_auc,
@@ -297,7 +333,7 @@ def evaluate_and_log(
         mlf.log_metrics(metrics)
         print(f"[INFO] Logged metrics: {metrics}")
         artifacts_dir = Path(td)
-        plot_paths = _plot_artifacts(y_va, y_prob, artifacts_dir / "plots")
+        plot_paths = _plot_artifacts(y_va, y_prob, artifacts_dir / "plots", threshold=prediction_threshold)
         for name, path in plot_paths.items():
             mlf.log_artifact(str(path), artifact_path="plots")
 
