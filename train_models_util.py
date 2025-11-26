@@ -1386,3 +1386,286 @@ def train_neural_network_ensemble(
         return best_model, base_models, X_meta_val, y_va, X_meta_test, y_test, best_params, hist_df, plot_paths
     else:
         return best_model, base_models, X_meta_val, y_va, best_params, hist_df, plot_paths
+
+def train_tree_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
+                      early_stopping_rounds=50):
+    """Train a Decision Tree classifier with Optuna hyperparameter optimization.
+    
+    Uses Optuna's TPE sampler to optimize hyperparameters targeting custom fraud cost.
+    Decision trees are non-boosted models that are fast to train and provide good 
+    interpretability while serving as useful baselines.
+    
+    Args:
+        X: Training features as pandas DataFrame or numpy array.
+        y: Training labels as pandas Series or numpy array.
+        test_size: Fraction of data to use for validation set. Defaults to 0.2.
+        n_trials: Number of Optuna trials for hyperparameter search. Defaults to 30.
+        random_state: Random seed for reproducibility. Defaults to 42.
+        early_stopping_rounds: Unused parameter for API consistency with boosting models. Defaults to 50.
+        
+    Returns:
+        tuple: A tuple containing:
+            best_model: Trained DecisionTree classifier with best parameters
+            best_params: Dictionary of best hyperparameters found
+            X_va: Validation features
+            y_va: Validation labels
+            hist_df: DataFrame containing trial history with parameters and scores
+            plot_paths: List of Paths to hyperparameter visualization plots
+    
+    Raises:
+        ValueError: If no successful trials complete or best parameters are missing
+            required keys.
+    
+    Example:
+        >>> from sklearn.datasets import make_classification
+        >>> X, y = make_classification(n_samples=1000, random_state=42)
+        >>> model, params, X_val, y_val, history, plots = train_tree_optuna(X, y)
+        >>> print(f"Best custom_loss: {history['score'].min():.4f}")
+    
+    Note:
+        Hyperparameters optimized include:
+        - max_depth: [5, 30]
+        - min_samples_split: [2, 50]
+        - min_samples_leaf: [1, 20]
+        - criterion: ["gini", "entropy"]
+    """
+    # Standard train/val split
+    X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=test_size, stratify=y, random_state=random_state)
+
+    trial_history = []  # we'll collect params and scores here
+    
+    def objective(trial):
+        factor = trial.suggest_float("weight_factor", 100.0, 1000.0)
+        params = {
+            "min_samples_split": trial.suggest_int("min_samples_split", 50, 2000, log=True),
+            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 10, 1000, log=True),
+            "criterion": trial.suggest_categorical("criterion", ["gini", "entropy"]),
+            "class_weight": {0: 1, 1: _scale_pos_weight(y_tr, factor)},
+            "random_state": random_state,
+            # Limit model complexity without blindly using max_depth
+            "max_leaf_nodes": trial.suggest_int("max_leaf_nodes", 50, 5000, log=True),
+            # Prevent pathological splits on high-cardinality fraud features
+            "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2", None]),
+        }
+        
+        try:
+            # 5-fold cross-validation
+            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+            cv_scores = []
+            cv_training_scores = []
+            
+            for train_idx, val_idx in cv.split(X_tr, y_tr):
+                X_train_fold, X_val_fold = X_tr.iloc[train_idx], X_tr.iloc[val_idx]
+                y_train_fold, y_val_fold = y_tr.iloc[train_idx], y_tr.iloc[val_idx]
+                
+                model = DecisionTreeClassifier(**params)
+                model.fit(X_train_fold, y_train_fold)
+                
+                # Evaluate fold on probabilities
+                y_prob = model.predict_proba(X_val_fold)[:, 1]
+                fold_score = eval_function(y_val_fold, y_prob)
+                cv_scores.append(fold_score)
+                
+                # Training score for this fold
+                y_prob_train = model.predict_proba(X_train_fold)[:, 1]
+                train_score = eval_function(y_train_fold, y_prob_train)
+                cv_training_scores.append(train_score)
+            
+            # Average scores across folds
+            score = np.mean(cv_scores)
+            train_score = np.mean(cv_training_scores)
+            
+            # Record trial results including CV stats
+            trial_history.append({
+                **params,
+                "score": score,
+                "training_score": train_score,
+                "cv_scores": cv_scores,
+                "cv_std": np.std(cv_scores),
+                "weight_factor": factor
+            })
+        except Exception as e:
+            score = 0.0
+            print(f"[WARN] Trial {trial.number} failed with error: {e}")
+        return score
+
+    study = optuna.create_study(direction="minimize", study_name="decision_tree_custom_cost_optimization", pruner=MedianPruner(n_startup_trials=5, n_warmup_steps=5, interval_steps=3))
+    with tqdm(total=n_trials, desc="[Optuna Decision Tree Tuning]", unit="trial") as pbar:
+        def _tqdm_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+            pbar.update(1)
+            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} cost={trial.value:.4f}")
+        study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], show_progress_bar=False, gc_after_trial=True)
+    
+    # Check if any trials succeeded
+    if len(trial_history) == 0:
+        raise ValueError("No successful trials completed. All Optuna trials failed. Check your data and parameters.")
+    
+    best_params = study.best_params
+    print(f"[INFO] Best Decision Tree params: {best_params}")
+
+    # Retrain with best params
+    best_params_final = best_params.copy()
+    best_params_final.pop("weight_factor", None)
+    best_model = DecisionTreeClassifier(**best_params_final)
+    best_model.fit(X_tr, y_tr)
+    
+    # -----------------
+    # Build history df + plots
+    # -----------------
+    hist_df = pd.DataFrame(trial_history)
+    plots_dir = Path("hp_search_plots/tree")
+    plot_paths = []
+    for p in ["max_depth", "min_samples_split", "min_samples_leaf", "criterion", "weight_factor"]:
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir, "training_score")
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+
+    return best_model, best_params, X_va, y_va, hist_df, plot_paths
+
+def train_random_forest_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
+                               early_stopping_rounds=50):
+    """Train a Random Forest classifier with Optuna hyperparameter optimization.
+    
+    Uses Optuna's TPE sampler to optimize hyperparameters targeting custom fraud cost.
+    Random forests combine multiple decision trees for improved generalization and robustness
+    while maintaining good interpretability through feature importance measures.
+    
+    Args:
+        X: Training features as pandas DataFrame or numpy array.
+        y: Training labels as pandas Series or numpy array.
+        test_size: Fraction of data to use for validation set. Defaults to 0.2.
+        n_trials: Number of Optuna trials for hyperparameter search. Defaults to 30.
+        random_state: Random seed for reproducibility. Defaults to 42.
+        early_stopping_rounds: Unused parameter for API consistency with boosting models. Defaults to 50.
+        
+    Returns:
+        tuple: A tuple containing:
+            best_model: Trained RandomForest classifier with best parameters
+            best_params: Dictionary of best hyperparameters found
+            X_va: Validation features
+            y_va: Validation labels
+            hist_df: DataFrame containing trial history with parameters and scores
+            plot_paths: List of Paths to hyperparameter visualization plots
+    
+    Raises:
+        ValueError: If no successful trials complete or best parameters are missing
+            required keys.
+    
+    Example:
+        >>> from sklearn.datasets import make_classification
+        >>> X, y = make_classification(n_samples=1000, random_state=42)
+        >>> model, params, X_val, y_val, history, plots = train_random_forest_optuna(X, y)
+        >>> print(f"Best custom_loss: {history['score'].min():.4f}")
+    
+    Note:
+        Hyperparameters optimized include:
+        - n_estimators: [50, 300] (with step 50)
+        - max_depth: [10, 40]
+        - min_samples_split: [2, 50]
+        - min_samples_leaf: [1, 20]
+        - max_features: ["sqrt", "log2"]
+        - bootstrap: [True, False]
+    """
+    # Standard train/val split
+    X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=test_size, stratify=y, random_state=random_state)
+
+    trial_history = []  # we'll collect params and scores here
+    
+    def objective(trial):
+        factor = trial.suggest_float("weight_factor", 100.0, 1000.0)
+        params = {
+            "n_estimators": trial.suggest_int("n_estimators", 50, 300, step=50),
+            "bootstrap": trial.suggest_categorical("bootstrap", [True, False]),
+            "n_jobs": -1,
+            "min_samples_split": trial.suggest_int("min_samples_split", 50, 2000, log=True),
+            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 10, 1000, log=True),
+            "criterion": trial.suggest_categorical("criterion", ["gini", "entropy"]),
+            "class_weight": {0: 1, 1: _scale_pos_weight(y_tr, factor)},
+            "random_state": random_state,
+            # Limit model complexity without blindly using max_depth
+            "max_leaf_nodes": trial.suggest_int("max_leaf_nodes", 50, 5000, log=True),
+            # Prevent pathological splits on high-cardinality fraud features
+            "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2", None]),
+        }
+        
+        try:
+            # 5-fold cross-validation
+            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+            cv_scores = []
+            cv_training_scores = []
+            
+            for train_idx, val_idx in cv.split(X_tr, y_tr):
+                X_train_fold, X_val_fold = X_tr.iloc[train_idx], X_tr.iloc[val_idx]
+                y_train_fold, y_val_fold = y_tr.iloc[train_idx], y_tr.iloc[val_idx]
+                
+                model = RandomForestClassifier(**params)
+                model.fit(X_train_fold, y_train_fold)
+                
+                # Evaluate fold on probabilities
+                y_prob = model.predict_proba(X_val_fold)[:, 1]
+                fold_score = eval_function(y_val_fold, y_prob)
+                cv_scores.append(fold_score)
+                
+                # Training score for this fold
+                y_prob_train = model.predict_proba(X_train_fold)[:, 1]
+                train_score = eval_function(y_train_fold, y_prob_train)
+                cv_training_scores.append(train_score)
+            
+            # Average scores across folds
+            score = np.mean(cv_scores)
+            train_score = np.mean(cv_training_scores)
+            
+            # Record trial results including CV stats
+            trial_history.append({
+                **params,
+                "score": score,
+                "training_score": train_score,
+                "cv_scores": cv_scores,
+                "cv_std": np.std(cv_scores),
+                "weight_factor": factor
+            })
+        except Exception as e:
+            score = 0.0
+            print(f"[WARN] Trial {trial.number} failed with error: {e}")
+        return score
+
+    study = optuna.create_study(direction="minimize", study_name="random_forest_custom_cost_optimization", pruner=MedianPruner(n_startup_trials=5, n_warmup_steps=5, interval_steps=3))
+    with tqdm(total=n_trials, desc="[Optuna Random Forest Tuning]", unit="trial") as pbar:
+        def _tqdm_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+            pbar.update(1)
+            pbar.set_postfix_str(f"Trial {trial.number+1}/{n_trials} cost={trial.value:.4f}")
+        study.optimize(objective, n_trials=n_trials, callbacks=[_tqdm_cb], show_progress_bar=False, gc_after_trial=True)
+    
+    # Check if any trials succeeded
+    if len(trial_history) == 0:
+        raise ValueError("No successful trials completed. All Optuna trials failed. Check your data and parameters.")
+    
+    best_params = study.best_params
+    print(f"[INFO] Best Random Forest params: {best_params}")
+
+    # Retrain with best params
+    best_params_final = best_params.copy()
+    best_params_final.pop("weight_factor", None)
+    
+    best_model = RandomForestClassifier(**best_params_final)
+    best_model.fit(X_tr, y_tr)
+    
+    # -----------------
+    # Build history df + plots
+    # -----------------
+    hist_df = pd.DataFrame(trial_history)
+    plots_dir = Path("hp_search_plots/rf")
+    plot_paths = []
+    for p in ["n_estimators", "min_samples_split", "min_samples_leaf", 
+              "max_features", "bootstrap", "weight_factor"]:
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir)
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+        path_maybe = plot_param_vs_score(hist_df, p, plots_dir, "training_score")
+        if path_maybe is not None:
+            plot_paths.append(path_maybe)
+
+    return best_model, best_params, X_va, y_va, hist_df, plot_paths
