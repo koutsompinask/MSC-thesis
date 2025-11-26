@@ -26,6 +26,8 @@ from sklearn.metrics import (
     average_precision_score
 )
 from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
 from catboost import CatBoostClassifier
 import xgboost as xgb
 import lightgbm as lgb
@@ -97,7 +99,7 @@ def eval_function(y_true, y_prob, threshold: float = 0.5) -> float:
     fn = np.sum((y_true == 1) & (y_prob < threshold))
     return (100*fn + fp)/len(y_true)
 
-def eval_function_lgbm(y_true, y_prob, threshold: float = 0.5) -> tuple[str, float, bool]:
+def eval_function_lgbm(y_true, y_prob) -> tuple[str, float, bool]:
     """Custom evaluation function wrapper for LightGBM.
     
     Args:
@@ -108,7 +110,26 @@ def eval_function_lgbm(y_true, y_prob, threshold: float = 0.5) -> tuple[str, flo
     Returns:
         tuple: (metric_name, metric_value, is_higher_better) where metric_name is "fraud_cost".
     """
-    return ('fraud_cost', eval_function(y_true, y_prob, threshold), False)
+    return ('fraud_cost', eval_function(y_true, y_prob, 0.5), False)
+
+def minimize_eval_metric_with_threshold(model, X, y_true) -> float:
+    """
+    This function is optimizing custom eval metric, given the model. It searches for the threshold that gives the best eval_metric score
+    """
+    if hasattr(model, "predict_proba"):
+        y_prob = model.predict_proba(X)[:, 1]
+    else:
+        y_prob = model.predict(X)
+
+    minProb = 0.5
+    minScore = eval_function(y_true, y_prob)
+    for i in range(len(y_true)):
+        if y_prob[i] < minProb and y_true[i] == 1:
+            score = eval_function(y_true, y_prob, y_prob[i]) 
+            if score < minScore:
+                minProb = y_prob[i]
+                minScore = score
+    return minProb, minScore
 
 def plot_param_vs_score(df: pd.DataFrame, param_name: str, out_dir: Path, metric_name: str = "score"):
     """Generate a diagnostic plot showing hyperparameter value vs model performance.
@@ -303,13 +324,6 @@ def train_xgb_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     
     best_params = study.best_params
     print(f"[INFO] Best XGBoost params: {best_params}")
-    
-    # Validate best_params contains required keys
-    required_keys = ["learning_rate", "max_depth", "subsample", "colsample_bytree", 
-                     "min_child_weight", "gamma"]
-    missing_keys = [k for k in required_keys if k not in best_params]
-    if missing_keys:
-        raise ValueError(f"Best params missing required keys: {missing_keys}")
 
     # Retrain with best params: use n_estimators=1000 for final model (increased from 500 used in trials)
     # This allows the model to potentially improve further with more trees
@@ -317,10 +331,11 @@ def train_xgb_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     best_params_final["n_estimators"] = 1000
     best_params_final["tree_method"] = "gpu_hist" if _gpu_available() and use_gpu else "hist"
     best_params_final["objective"] = "binary:logistic"
-    best_params_final["scale_pos_weight"] = _scale_pos_weight(y_tr)
+    best_params_final["scale_pos_weight"] = _scale_pos_weight(y_tr, best_params.get("weight_factor", 1.0))
     best_params_final["n_jobs"] = -1
     best_params_final["random_state"] = random_state
     best_params_final["verbosity"] = 0
+    best_params_final.pop("weight_factor", None)  # remove weight_factor from final params
     
     best_model = xgb.XGBClassifier(**best_params_final, early_stopping_rounds=early_stopping_rounds, enable_categorical=True)
     best_model.fit(X_tr, y_tr, eval_set=[(X_va, y_va)], verbose=False)
@@ -451,21 +466,15 @@ def train_catboost_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     
     best_params = study.best_params
     print(f"[INFO] Best CatBoost params: {best_params}")
-    
-    # Validate best_params contains required keys
-    required_keys = ["learning_rate", "depth", "l2_leaf_reg", "subsample", "border_count"]
-    missing_keys = [k for k in required_keys if k not in best_params]
-    if missing_keys:
-        raise ValueError(f"Best params missing required keys: {missing_keys}")
 
     # Retrain with best params: use iterations=1000 for final model (increased from 500 used in trials)
     # This allows the model to potentially improve further with more iterations
     best_params_final = best_params.copy()
     best_params_final["iterations"] = 1000
-    best_params_final["eval_metric"] = "PRAUC"
+    best_params_final["eval_metric"] = "Recall"
     best_params_final["task_type"] = "GPU" if _gpu_available() and use_gpu else "CPU"
-    best_params_final["scale_pos_weight"] = _scale_pos_weight(y_tr)
     best_params_final["random_seed"] = random_state
+    best_params_final["scale_pos_weight"] = _scale_pos_weight(y_tr, best_params.get("weight_factor", 1.0))
     best_params_final["verbose"] = False
     best_params_final.pop("weight_factor", None)  # remove weight_factor from final params
     
@@ -630,13 +639,6 @@ def train_lgbm_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     
     best_params = study.best_params
     print(f"[INFO] Best LightGBM params: {best_params}")
-    
-    # Validate best_params contains required keys
-    required_keys = ["num_leaves", "max_depth", "learning_rate", "feature_fraction", 
-                     "bagging_fraction", "bagging_freq", "min_child_samples", "lambda_l1", "lambda_l2"]
-    missing_keys = [k for k in required_keys if k not in best_params]
-    if missing_keys:
-        raise ValueError(f"Best params missing required keys: {missing_keys}")
 
     # Retrain with best params: use n_estimators=1000 for final model (increased from 500 used in trials)
     # This allows the model to potentially improve further with more trees
@@ -647,8 +649,9 @@ def train_lgbm_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     best_params_final["verbosity"] = -1
     best_params_final["boosting_type"] = "gbdt"
     best_params_final["device"] = "gpu" if _gpu_available() and use_gpu else "cpu"
-    best_params_final["scale_pos_weight"] = _scale_pos_weight(y_tr)
     best_params_final["random_state"] = random_state
+    best_params_final["scale_pos_weight"] = _scale_pos_weight(y_tr, best_params.get("weight_factor", 1.0))
+    best_params_final.pop("weight_factor", None)  # remove weight_factor from final params
     
     best_model = lgb.LGBMClassifier(**best_params_final, categorical_feature=categorical_features)
     best_model.fit(X_tr, y_tr,

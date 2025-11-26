@@ -17,7 +17,7 @@ def authenticate(api_key: str = Security(api_key_header)):
 
 import mlflow.pyfunc
 
-MODEL_PATH = "file:../mlruns/298866245379007145/models/m-d891c555aaef4e08a28d0712943f4eba"
+MODEL_PATH = "mlruns/298866245379007145/models/m-d891c555aaef4e08a28d0712943f4eba"
 
 print("Loading MLflow model...")
 ml_model = mlflow.pyfunc.load_model(MODEL_PATH)
