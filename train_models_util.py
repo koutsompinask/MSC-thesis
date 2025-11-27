@@ -335,6 +335,7 @@ def train_xgb_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     best_params_final["n_jobs"] = -1
     best_params_final["random_state"] = random_state
     best_params_final["verbosity"] = 0
+    best_params_final["eval_metric"] = eval_function
     best_params_final.pop("weight_factor", None)  # remove weight_factor from final params
     
     best_model = xgb.XGBClassifier(**best_params_final, early_stopping_rounds=early_stopping_rounds, enable_categorical=True)
@@ -645,7 +646,6 @@ def train_lgbm_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     best_params_final = best_params.copy()
     best_params_final["n_estimators"] = 1000
     best_params_final["objective"] = "binary"
-    best_params_final["metric"] = "average_precision"
     best_params_final["verbosity"] = -1
     best_params_final["boosting_type"] = "gbdt"
     best_params_final["device"] = "gpu" if _gpu_available() and use_gpu else "cpu"
@@ -655,9 +655,9 @@ def train_lgbm_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
     
     best_model = lgb.LGBMClassifier(**best_params_final, categorical_feature=categorical_features)
     best_model.fit(X_tr, y_tr,
-                   eval_set=[(X_va, y_va)],
-                   eval_metric="average_precision",
-                   callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)])
+                    eval_set=[(X_va, y_va)],
+                    eval_metric=eval_function_lgbm,
+                    callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)])
     
     # Update best_params to include n_estimators for logging consistency
     best_params["n_estimators"] = 1000

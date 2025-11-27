@@ -25,7 +25,7 @@ import shap
 import numpy as np
 import pandas as pd
 
-def get_top_features_shap(model, X, y, top_n=None, max_fraud=5000):
+def get_top_features_shap(model, X, y, max_fraud=5000):
     """
     Computes SHAP feature importance for a trained tree-based model,
     using all (or up to max_fraud) fraud cases and an equal-sized 
@@ -38,8 +38,6 @@ def get_top_features_shap(model, X, y, top_n=None, max_fraud=5000):
         Input data for SHAP evaluation
     y : pandas Series or array-like
         Ground-truth labels (0 = non-fraud, 1 = fraud)
-    top_n : int or None
-        Number of top features to return
     max_fraud : int
         Maximum number of fraud examples to include
 
@@ -98,9 +96,6 @@ def get_top_features_shap(model, X, y, top_n=None, max_fraud=5000):
         "feature": X.columns,
         "importance": importance
     }).sort_values("importance", ascending=False)
-
-    if top_n is not None:
-        df = df.head(top_n)
 
     return df
 
