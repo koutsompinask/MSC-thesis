@@ -307,7 +307,7 @@ def evaluate_and_log(
             mlf.log_artifact(str(hist_path), artifact_path="hp_search")
 
             # also log summary stats for convenience
-            mlf.log_metric("hp_best_score", float(hp_search_history["score"].min()))
+            mlf.log_metric("hp_best_score", float(hp_search_history["score"].max()))
             mlf.log_metric("hp_avg_score", float(hp_search_history["score"].mean()))
             mlf.log_metric("hp_std_score", float(hp_search_history["score"].std()))
 
