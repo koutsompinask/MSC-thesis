@@ -841,13 +841,10 @@ def train_best_base_models_from_mlflow(
     return base_models, X_tr, X_va, y_tr, y_va, X_test, y_test, best_params_dict
 
 def train_ensemble(
-    base_models: dict,
     X_tr: pd.DataFrame,
     y_tr: pd.Series,
     X_va: pd.DataFrame,
     y_va: pd.Series,
-    X_test: pd.Series,
-    y_test: pd.Series,
     n_trials: int = 30,
     random_state: int = 42,
 ):
@@ -907,15 +904,6 @@ def train_ensemble(
     """
     
     print("[INFO] Generating meta-features...")
-    # Build train meta features
-    X_meta = np.column_stack([m.predict_proba(X_tr)[:, 1] for m in base_models.values()])
-    X_meta_val = np.column_stack([m.predict_proba(X_va)[:, 1] for m in base_models.values()])
-
-    # Display base model individual validation PR-AUC
-    for name, model in base_models.items():
-        y_pred_val = model.predict_proba(X_va)[:, 1]
-        print(f"[INFO] {name} validation PR-AUC: {average_precision_score(y_va, y_pred_val):.4f}")
-
     # Prepare Optuna optimization
     trial_history = []
 
@@ -959,28 +947,44 @@ def train_ensemble(
             params["l1_ratio"] = l1_ratio
 
         try:
-            model = LogisticRegression(**params)
-            model.fit(X_meta, y_tr)
-            preds = model.predict_proba(X_meta_val)[:, 1]
-            score = average_precision_score(y_va, preds)
-
-            # Also compute training score
-            y_pred_train = model.predict_proba(X_meta)[:, 1]
-            training_score = average_precision_score(y_tr, y_pred_train)
-        
-
-            # Record trial info
-            rec = params.copy()
-            rec["score"] = score
-            rec["trial_number"] = trial.number
-            trial_history.append(rec)
-            rec["training_score"] = training_score
-            trial_history.append(rec)
-            return score
-
+            # 5-fold cross-validation
+            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state)
+            cv_scores = []
+            cv_training_scores = []
+            
+            for train_idx, val_idx in cv.split(X_tr, y_tr):
+                X_train_fold, X_val_fold = X_tr.iloc[train_idx], X_tr.iloc[val_idx]
+                y_train_fold, y_val_fold = y_tr.iloc[train_idx], y_tr.iloc[val_idx]
+                    
+                model = LogisticRegression(**params)
+                model.fit(X_train_fold, y_train_fold)
+                 
+                # Evaluate fold
+                y_prob = model.predict_proba(X_val_fold)[:, 1]
+                fold_score = average_precision_score(y_val_fold, y_prob)
+                cv_scores.append(fold_score)
+                
+                # Training score for this fold
+                y_prob_train = model.predict_proba(X_train_fold)[:, 1]
+                train_score = average_precision_score(y_train_fold, y_prob_train)
+                cv_training_scores.append(train_score)
+            
+            # Average scores across folds
+            score = np.mean(cv_scores)
+            train_score = np.mean(cv_training_scores)
+            
+            # Record trial results including CV stats
+            trial_history.append({
+                **params,
+                "score": score,
+                "training_score": train_score,
+                "cv_scores": cv_scores,
+                "cv_std": np.std(cv_scores),
+            })
         except Exception as e:
             print(f"[WARN] Trial {trial.number} failed ({e})")
-            return 0.0
+            score = 0.0
+        return score
 
     print("[INFO] Optimizing meta-learner with Optuna...")
     study = optuna.create_study(direction="maximize", study_name="ensemble_meta_learner_pr_auc_optimization")
@@ -1005,7 +1009,7 @@ def train_ensemble(
     
     # Final model
     ensemble = LogisticRegression(**best_params, random_state=random_state)
-    ensemble.fit(X_meta, y_tr)
+    ensemble.fit(X_tr, y_tr)
     # Prepare best_params for logging (convert None to string for MLflow compatibility)
     best_params_log = best_params.copy()
     best_params_log["random_state"] = random_state
@@ -1019,27 +1023,12 @@ def train_ensemble(
         best_params_log.pop("l1_ratio")
     
     # Evaluate ensemble on validation set
-    y_prob_ensemble = ensemble.predict_proba(X_meta_val)[:, 1]
+    y_prob_ensemble = ensemble.predict_proba(X_va)[:, 1]
     ensemble_pr_auc = average_precision_score(y_va, y_prob_ensemble)
     ensemble_roc_auc = roc_auc_score(y_va, y_prob_ensemble)
     
     print(f"[INFO] Ensemble validation PR-AUC: {ensemble_pr_auc:.4f}")
     print(f"[INFO] Ensemble validation ROC-AUC: {ensemble_roc_auc:.4f}")
-    
-    X_meta_test = None
-    # Evaluate on test set if available
-    if X_test is not None:
-        test_base_predictions = []
-        for name, model in base_models.items():
-            y_prob = model.predict_proba(X_test)[:, 1]
-            test_base_predictions.append(y_prob)
-        X_meta_test = np.column_stack(test_base_predictions)
-        y_prob_ensemble_test = ensemble.predict_proba(X_meta_test)[:, 1]
-        ensemble_pr_auc_test = average_precision_score(y_test, y_prob_ensemble_test)
-        ensemble_roc_auc_test = roc_auc_score(y_test, y_prob_ensemble_test)
-        
-        print(f"[INFO] Ensemble test PR-AUC: {ensemble_pr_auc_test:.4f}")
-        print(f"[INFO] Ensemble test ROC-AUC: {ensemble_roc_auc_test:.4f}")
     
     # Build history df + plots
     hist_df = pd.DataFrame(trial_history)
@@ -1053,10 +1042,7 @@ def train_ensemble(
         if path_maybe is not None:
             plot_paths.append(path_maybe)
 
-        if X_test is not None:
-            return ensemble, base_models, X_meta_val, y_va, X_meta_test, y_test, best_params_log, hist_df, plot_paths
-        else:
-            return ensemble, base_models, X_va, y_va, best_params_log, hist_df, plot_paths
+    return ensemble, best_params_log, hist_df, plot_paths
 
 def train_neural_network_ensemble(
     base_models: dict,
