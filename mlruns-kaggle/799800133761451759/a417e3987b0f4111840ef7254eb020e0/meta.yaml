@@ -1,0 +1,14 @@
+artifact_uri: /kaggle/working/mlruns/799800133761451759/a417e3987b0f4111840ef7254eb020e0/artifacts
+end_time: 1765134126980
+entry_point_name: ''
+experiment_id: '799800133761451759'
+lifecycle_stage: active
+run_id: a417e3987b0f4111840ef7254eb020e0
+run_name: LGBM_Anomaly
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1765134115207
+status: 3
+tags: []
+user_id: root

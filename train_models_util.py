@@ -20,7 +20,7 @@ import optuna
 from optuna.pruners import MedianPruner
 import mlflow as mlf
 from pathlib import Path
-from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.model_selection import train_test_split, StratifiedKFold, TimeSeriesSplit
 from sklearn.metrics import (
     roc_auc_score,
     average_precision_score
@@ -268,7 +268,7 @@ def train_xgb_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_trial
         }
         try:
             # 5-fold cross-validation
-            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state)
+            cv = TimeSeriesSplit(n_splits=3)
             cv_scores = []
             cv_training_scores = []
             
@@ -327,7 +327,7 @@ def train_xgb_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_trial
     # Retrain with best params: use n_estimators=1000 for final model (increased from 500 used in trials)
     # This allows the model to potentially improve further with more trees
     best_params_final = best_params.copy()
-    best_params_final["n_estimators"] = 1000
+    best_params_final["n_estimators"] = 5000
     best_params_final["tree_method"] = "gpu_hist" if _gpu_available() and use_gpu else "hist"
     best_params_final["objective"] = "binary:logistic"
     best_params_final["scale_pos_weight"] = _scale_pos_weight(y_train)
@@ -336,7 +336,7 @@ def train_xgb_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_trial
     best_params_final["verbosity"] = 0
     best_params_final["eval_metric"] = "aucpr"
     
-    best_model = xgb.XGBClassifier(**best_params_final, early_stopping_rounds=early_stopping_rounds, enable_categorical=True)
+    best_model = xgb.XGBClassifier(**best_params_final, early_stopping_rounds=200, enable_categorical=True)
     best_model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)], verbose=False)
     
     # Update best_params to include n_estimators for logging consistency
@@ -409,7 +409,7 @@ def train_catboost_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_
         }
         try:
             # 5-fold cross-validation
-            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state)
+            cv = TimeSeriesSplit(n_splits=3)
             cv_scores = []
             cv_training_scores = []
             
@@ -469,7 +469,7 @@ def train_catboost_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_
     # Retrain with best params: use iterations=1000 for final model (increased from 500 used in trials)
     # This allows the model to potentially improve further with more iterations
     best_params_final = best_params.copy()
-    best_params_final["iterations"] = 1000
+    best_params_final["iterations"] = 5000
     best_params_final["eval_metric"] = "PRAUC"
     best_params_final["task_type"] = "GPU" if _gpu_available() and use_gpu else "CPU"
     best_params_final["random_seed"] = random_state
@@ -478,7 +478,7 @@ def train_catboost_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_
     
     best_model = CatBoostClassifier(**best_params_final)
     best_model.fit(X_train, y_train, eval_set=(X_valid, y_valid),
-                   early_stopping_rounds=early_stopping_rounds,
+                   early_stopping_rounds=200,
                    verbose=False,
                    cat_features=categorical_features)
     
@@ -561,23 +561,22 @@ def train_lgbm_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_tria
             "objective": "binary",
             "verbosity": -1,
             "boosting_type": "gbdt",
-            "num_leaves": trial.suggest_int("num_leaves", 16, 256),
+            "num_leaves": trial.suggest_int("num_leaves", 128, 512),
             "max_depth": trial.suggest_int("max_depth", 10, 20),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "feature_fraction": trial.suggest_float("feature_fraction", 0.6, 1.0),
-            "bagging_fraction": trial.suggest_float("bagging_fraction", 0.6, 1.0),
-            "bagging_freq": trial.suggest_int("bagging_freq", 1, 10),
             "min_child_samples": trial.suggest_int("min_child_samples", 10, 100),
-            "lambda_l1": trial.suggest_float("lambda_l1", 1e-8, 10.0, log=True),
-            "lambda_l2": trial.suggest_float("lambda_l2", 1e-8, 10.0, log=True),
             "device": "gpu" if  _gpu_available() and use_gpu else "cpu",
             "random_state": random_state,
             "scale_pos_weight": _scale_pos_weight(y_tune),
+            'reg_alpha': trial.suggest_float("reg_alpha", 0.0, 0.5),
+            'reg_lambda': trial.suggest_float("reg_lambda", 0.0, 0.5),
+            'colsample_bytree': trial.suggest_float("colsample_bytree", 0.8, 1),
+            "subsample": trial.suggest_float("subsample", 0.8, 1)
         }
         model = lgb.LGBMClassifier(**params, categorical_feature=categorical_features)
         try:
             # 5-fold cross-validation
-            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state)
+            cv = TimeSeriesSplit(n_splits=3)
             cv_scores = []
             cv_training_scores = []
             
@@ -637,7 +636,7 @@ def train_lgbm_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_tria
     # Retrain with best params: use n_estimators=1000 for final model (increased from 500 used in trials)
     # This allows the model to potentially improve further with more trees
     best_params_final = best_params.copy()
-    best_params_final["n_estimators"] = 1000
+    best_params_final["n_estimators"] = 5000
     best_params_final["objective"] = "binary"
     best_params_final["verbosity"] = -1
     best_params_final["boosting_type"] = "gbdt"
@@ -650,7 +649,7 @@ def train_lgbm_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_tria
     best_model.fit(X_train, y_train,
                     eval_set=[(X_valid, y_valid)],
                     eval_metric="aucpr",
-                    callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)])
+                    callbacks=[lgb.early_stopping(200, verbose=False)])
     
     # Update best_params to include n_estimators for logging consistency
     best_params["n_estimators"] = 1000
@@ -948,7 +947,7 @@ def train_ensemble(
 
         try:
             # 5-fold cross-validation
-            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state)
+            cv = TimeSeriesSplit(n_splits=3)
             cv_scores = []
             cv_training_scores = []
             
@@ -1428,7 +1427,7 @@ def train_tree_optuna(X, y, test_size=0.2, n_trials=30, random_state=42,
         
         try:
             # 5-fold cross-validation
-            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state)
+            cv = TimeSeriesSplit(n_splits=3)
             cv_scores = []
             cv_training_scores = []
             
@@ -1570,7 +1569,7 @@ def train_random_forest_optuna(X, y, test_size=0.2, n_trials=30, random_state=42
         
         try:
             # 5-fold cross-validation
-            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state)
+            cv = TimeSeriesSplit(n_splits=3)
             cv_scores = []
             cv_training_scores = []
             

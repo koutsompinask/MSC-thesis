@@ -1,0 +1,14 @@
+artifact_uri: file:c:/Developer/MSC-thesis/mlruns/257333804608955698/4ef042dd8d13443d8ab52e6f04c30e32/artifacts
+end_time: 1764984395027
+entry_point_name: ''
+experiment_id: '257333804608955698'
+lifecycle_stage: active
+run_id: 4ef042dd8d13443d8ab52e6f04c30e32
+run_name: LightGBM_Optuna_fullfeatures
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1764984387354
+status: 3
+tags: []
+user_id: ppapa

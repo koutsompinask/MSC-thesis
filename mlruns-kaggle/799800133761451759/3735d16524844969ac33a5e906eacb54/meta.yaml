@@ -1,0 +1,14 @@
+artifact_uri: /kaggle/working/mlruns/799800133761451759/3735d16524844969ac33a5e906eacb54/artifacts
+end_time: 1765125873047
+entry_point_name: ''
+experiment_id: '799800133761451759'
+lifecycle_stage: active
+run_id: 3735d16524844969ac33a5e906eacb54
+run_name: XGB_Reduced
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1765125857953
+status: 4
+tags: []
+user_id: root

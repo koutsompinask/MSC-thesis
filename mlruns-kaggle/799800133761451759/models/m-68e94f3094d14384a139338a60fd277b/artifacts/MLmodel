@@ -1,0 +1,22 @@
+artifact_path: /kaggle/working/mlruns/799800133761451759/models/m-68e94f3094d14384a139338a60fd277b/artifacts
+flavors:
+  python_function:
+    data: model.ubj
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.xgboost
+    python_version: 3.11.13
+  xgboost:
+    code: null
+    data: model.ubj
+    model_class: xgboost.sklearn.XGBClassifier
+    model_format: ubj
+    xgb_version: 2.0.3
+mlflow_version: 3.7.0
+model_id: m-68e94f3094d14384a139338a60fd277b
+model_size_bytes: 42461370
+model_uuid: m-68e94f3094d14384a139338a60fd277b
+prompts: null
+run_id: d3501092b1e24d9abbc60ddad4ecdf6c
+utc_time_created: '2025-12-07 16:45:06.622907'
