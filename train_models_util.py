@@ -99,6 +99,7 @@ def eval_function(y_true, y_prob, threshold: float = 0.5) -> float:
     fn = np.sum((y_true == 1) & (y_prob < threshold))
     return (100*fn + fp)/len(y_true)
 
+
 def minimize_eval_metric_with_threshold(model, X, y_true):
     if hasattr(model, "predict_proba"):
         y_prob = model.predict_proba(X)[:, 1]
@@ -188,7 +189,7 @@ def plot_param_vs_score(df: pd.DataFrame, param_name: str, out_dir: Path, metric
 # ---------------------------
 #  MODEL-SPECIFIC TRAINING
 # ---------------------------
-def train_xgb_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_trials=30, random_state=42,
+def train_xgb_optuna(X, y, n_trials=30, random_state=42,
                      early_stopping_rounds=50, use_gpu=True):
     """Train an XGBoost classifier with Optuna hyperparameter optimization.
     
@@ -234,13 +235,20 @@ def train_xgb_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_trial
         - min_child_weight: [1e-3, 1.0] log-uniform
         - gamma: [0, 5]
     """
+    n = len(X)
+    split_idx1 = int(n * 0.8)
+
+    X_train = X.iloc[:split_idx1]
+    X_valid = X.iloc[split_idx1:]
+    y_train = y.iloc[:split_idx1]
+    y_valid = y.iloc[split_idx1:]
 
     trial_history = []  # we'll collect params and scores here
     
     def objective(trial):
         params = {
             "n_estimators": 300,
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.03),
             "max_depth": trial.suggest_int("max_depth", 3, 8),
             "subsample": trial.suggest_float("subsample", 0.5, 1.0),
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
@@ -249,7 +257,7 @@ def train_xgb_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_trial
             "tree_method": "gpu_hist" if  _gpu_available() and use_gpu else "hist",
             "objective": "binary:logistic",
             "eval_metric": "aucpr",
-            "scale_pos_weight": _scale_pos_weight(y_tune),
+            "scale_pos_weight": _scale_pos_weight(y),
             "n_jobs": -1,
             "random_state": random_state,
         }
@@ -259,9 +267,9 @@ def train_xgb_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_trial
             cv_scores = []
             cv_training_scores = []
             
-            for train_idx, val_idx in cv.split(X_tune, y_tune):
-                X_train_fold, X_val_fold = X_tune.iloc[train_idx], X_tune.iloc[val_idx]
-                y_train_fold, y_val_fold = y_tune.iloc[train_idx], y_tune.iloc[val_idx]
+            for train_idx, val_idx in cv.split(X, y):
+                X_train_fold, X_val_fold = X.iloc[train_idx], X.iloc[val_idx]
+                y_train_fold, y_val_fold = y.iloc[train_idx], y.iloc[val_idx]
                 
                 model = xgb.XGBClassifier(**params, early_stopping_rounds=early_stopping_rounds, enable_categorical=True)
                 model.fit(
@@ -322,10 +330,11 @@ def train_xgb_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_trial
     best_params_final["random_state"] = random_state
     best_params_final["verbosity"] = 0
     best_params_final["eval_metric"] = "aucpr"
-    
+
     best_model = xgb.XGBClassifier(**best_params_final, early_stopping_rounds=100, enable_categorical=True)
-    best_model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)], verbose=False)
+    best_model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)], verbose=100)
     
+
     # Update best_params to include n_estimators for logging consistency
     best_params["n_estimators"] = 5000
 
@@ -346,7 +355,7 @@ def train_xgb_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_trial
 
     return best_model, best_params, hist_df, plot_paths
 
-def train_catboost_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_trials=30, random_state=42,
+def train_catboost_optuna(X, y, n_trials=30, random_state=42,
                           early_stopping_rounds=50, use_gpu=True):
     """Train a CatBoost classifier with automatic hyperparameter optimization.
     
@@ -374,15 +383,23 @@ def train_catboost_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_
             - plot_paths: List of Paths to diagnostic plots
     """
     trial_history = []  # we'll collect params and scores here
-    categorical_features = X_train.select_dtypes(include=['category', 'object']).columns.tolist()
+    n = len(X)
+    split_idx1 = int(n * 0.8)
 
-    # train_pool = Pool(X_tune, y_tune, cat_features=categorical_features)
+    X_train = X.iloc[:split_idx1]
+    X_valid = X.iloc[split_idx1:]
+    y_train = y.iloc[:split_idx1]
+    y_valid = y.iloc[split_idx1:]
+
+    categorical_features = X.select_dtypes(include=['category', 'object']).columns.tolist()
+
+    # train_pool = Pool(X, y, cat_features=categorical_features)
 
     def objective(trial):
         params = {
             "iterations": 300,
             "bootstrap_type": "Bernoulli",
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.03),
             "depth": trial.suggest_int("depth", 3, 8),
             "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1, 10),
             "subsample": trial.suggest_float("subsample", 0.6, 1.0),
@@ -391,7 +408,7 @@ def train_catboost_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_
             "task_type": "GPU" if  _gpu_available() and use_gpu else "CPU",
             "loss_function": "Logloss",
             "random_state": random_state,
-            "scale_pos_weight": _scale_pos_weight(y_tune),
+            "scale_pos_weight": _scale_pos_weight(y),
         }
         try:
             # 5-fold cross-validation
@@ -399,9 +416,9 @@ def train_catboost_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_
             cv_scores = []
             cv_training_scores = []
             
-            for train_idx, val_idx in cv.split(X_tune, y_tune):
-                X_train_fold, X_val_fold = X_tune.iloc[train_idx], X_tune.iloc[val_idx]
-                y_train_fold, y_val_fold = y_tune.iloc[train_idx], y_tune.iloc[val_idx]
+            for train_idx, val_idx in cv.split(X, y):
+                X_train_fold, X_val_fold = X.iloc[train_idx], X.iloc[val_idx]
+                y_train_fold, y_val_fold = y.iloc[train_idx], y.iloc[val_idx]
                 
                 model = CatBoostClassifier(**params, cat_features=categorical_features)
 
@@ -464,8 +481,8 @@ def train_catboost_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_
     
     best_model = CatBoostClassifier(**best_params_final)
     best_model.fit(X_train, y_train, eval_set=(X_valid, y_valid),
-                   early_stopping_rounds=200,
-                   verbose=False,
+                   early_stopping_rounds=100,
+                   verbose=100,
                    cat_features=categorical_features)
     
     # Update best_params to include iterations for logging consistency
@@ -490,7 +507,7 @@ def train_catboost_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_
     
     return best_model, best_params, hist_df, plot_paths
 
-def train_lgbm_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_trials=30, random_state=42,
+def train_lgbm_optuna(X, y, n_trials=30, random_state=42,
                       early_stopping_rounds=50, use_gpu=True):
     """Train a LightGBM classifier with Optuna hyperparameter optimization.
     
@@ -540,7 +557,15 @@ def train_lgbm_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_tria
         - lambda_l2: [1e-8, 10.0] log-uniform
     """
     trial_history = []  # we'll collect params and scores here
-    categorical_features = X_train.select_dtypes(include=['category', 'object']).columns.tolist()
+    n = len(X)
+    split_idx1 = int(n * 0.8)
+
+    X_train = X.iloc[:split_idx1]
+    X_valid = X.iloc[split_idx1:]
+    y_train = y.iloc[:split_idx1]
+    y_valid = y.iloc[split_idx1:]
+    
+    categorical_features = X.select_dtypes(include=['category', 'object']).columns.tolist()
     def objective(trial):
         params = {
             "n_estimators": 300,
@@ -549,11 +574,11 @@ def train_lgbm_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_tria
             "boosting_type": "gbdt",
             "num_leaves": trial.suggest_int("num_leaves", 128, 512),
             "max_depth": trial.suggest_int("max_depth", 10, 20),
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.03),
             "min_child_samples": trial.suggest_int("min_child_samples", 10, 100),
             "device": "gpu" if  _gpu_available() and use_gpu else "cpu",
             "random_state": random_state,
-            "scale_pos_weight": _scale_pos_weight(y_tune),
+            "scale_pos_weight": _scale_pos_weight(y),
             'reg_alpha': trial.suggest_float("reg_alpha", 0.0, 0.5),
             'reg_lambda': trial.suggest_float("reg_lambda", 0.0, 0.5),
             'colsample_bytree': trial.suggest_float("colsample_bytree", 0.8, 1),
@@ -566,9 +591,9 @@ def train_lgbm_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_tria
             cv_scores = []
             cv_training_scores = []
             
-            for train_idx, val_idx in cv.split(X_tune, y_tune):
-                X_train_fold, X_val_fold = X_tune.iloc[train_idx], X_tune.iloc[val_idx]
-                y_train_fold, y_val_fold = y_tune.iloc[train_idx], y_tune.iloc[val_idx]
+            for train_idx, val_idx in cv.split(X, y):
+                X_train_fold, X_val_fold = X.iloc[train_idx], X.iloc[val_idx]
+                y_train_fold, y_val_fold = y.iloc[train_idx], y.iloc[val_idx]
 
                 model.fit(
                     X_train_fold, y_train_fold,
@@ -635,7 +660,7 @@ def train_lgbm_optuna(X_train, y_train, X_tune, y_tune, X_valid, y_valid, n_tria
     best_model.fit(X_train, y_train,
                     eval_set=[(X_valid, y_valid)],
                     eval_metric="aucpr",
-                    callbacks=[lgb.early_stopping(200, verbose=False)])
+                    callbacks=[lgb.early_stopping(100, verbose=False), lgb.log_evaluation(period=50)])
     
     # Update best_params to include n_estimators for logging consistency
     best_params["n_estimators"] = 5000

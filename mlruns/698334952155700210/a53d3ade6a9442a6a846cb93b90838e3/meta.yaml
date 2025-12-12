@@ -1,0 +1,14 @@
+artifact_uri: file:c:/Developer/MSC-thesis/mlruns/698334952155700210/a53d3ade6a9442a6a846cb93b90838e3/artifacts
+end_time: 1765563007812
+entry_point_name: ''
+experiment_id: '698334952155700210'
+lifecycle_stage: active
+run_id: a53d3ade6a9442a6a846cb93b90838e3
+run_name: LGBM_Optuna_Reduced_threshold_0.1
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1765562930169
+status: 3
+tags: []
+user_id: ppapa

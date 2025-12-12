@@ -22,15 +22,18 @@ from train_models_util import eval_function
 def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path, threshold: float = 0.5) -> dict[str, Path]:
     """Generate and save evaluation plots for binary classification results.
     
-    Creates and saves three key evaluation plots:
+    Creates and saves four key evaluation plots:
     - ROC curve showing true positive vs false positive rate trade-off
     - Precision-Recall curve showing precision vs recall trade-off
-    - Confusion matrix showing prediction counts at 0.5 threshold
+    - Confusion matrix showing prediction counts at specified threshold
+    - FP/FN over time showing cumulative false positive and negative rates across samples
     
     Args:
         y_true: True binary labels (0 or 1).
         y_prob: Predicted probabilities for the positive class (between 0 and 1).
         out_dir: Directory path where plots will be saved.
+        threshold: Classification threshold for converting probabilities to binary predictions.
+            Used for confusion matrix and FP/FN analysis. Defaults to 0.5.
         
     Returns:
         dict[str, Path]: Dictionary mapping plot names to their saved file paths.
@@ -38,6 +41,7 @@ def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path, thres
                 'roc_curve': Path to ROC curve plot
                 'pr_curve': Path to precision-recall curve plot
                 'confusion_matrix': Path to confusion matrix plot
+                'fp_fn_over_time': Path to FP/FN rates over time plot
             
     Example:
         >>> y_true = np.array([0, 1, 1, 0])
@@ -81,7 +85,7 @@ def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path, thres
     plt.close()
     paths["pr_curve"] = p
 
-    # Confusion matrix @ 0.5
+    # Confusion matrix @ threshold
     y_pred = (y_prob >= threshold).astype(int)
     cm = confusion_matrix(y_true, y_pred)
     plt.figure()
@@ -104,8 +108,33 @@ def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path, thres
     plt.close()
     paths["confusion_matrix"] = p
 
-    return paths
+    # FP/FN over time
+    y_pred_binary = (y_prob >= threshold).astype(int)
+    fp = (y_pred_binary == 1) & (y_true == 0)
+    fn = (y_pred_binary == 0) & (y_true == 1)
 
+    cum_fp = np.cumsum(fp)
+    cum_fn = np.cumsum(fn)
+    cum_neg = np.cumsum(y_true == 0)
+    cum_pos = np.cumsum(y_true == 1)
+
+    fpr = np.where(cum_neg == 0, 0, cum_fp / cum_neg)
+    fnr = np.where(cum_pos == 0, 0, cum_fn / cum_pos)
+
+    plt.figure(figsize=(12, 6))
+    plt.plot(fpr, label="False Positive Rate (FPR)")
+    plt.plot(fnr, label="False Negative Rate (FNR)")
+    plt.xlabel("Transaction Index (Time)")
+    plt.ylabel("Rate")
+    plt.title("False Positive & False Negative Rates Over Time")
+    plt.legend()
+    plt.grid(True)
+    p = out_dir / "fp_fn_over_time.png"
+    plt.savefig(p, bbox_inches="tight", dpi=150)
+    plt.close()
+    paths["fp_fn_over_time"] = p
+
+    return paths
 
 # ---------------------------
 #  UNIVERSAL EVALUATION LOGIC
@@ -260,25 +289,6 @@ def evaluate_and_log(
         except Exception as e:
             print(f"[WARN] SHAP skipped: {e}")
 
-        # --- Calibration ---
-        prob_true, prob_pred = calibration_curve(y_va, y_prob, n_bins=10)
-        # Align weights to non-empty bins returned by calibration_curve
-        bin_edges = np.linspace(0.0, 1.0, 11)
-        counts, _ = np.histogram(y_prob, bins=bin_edges)
-        non_empty_mask = counts > 0
-        weights = counts[non_empty_mask]
-        ece = np.average(np.abs(prob_true - prob_pred), weights=weights)
-        brier = brier_score_loss(y_va, y_prob)
-        mlf.log_metric("ece", float(ece))
-        mlf.log_metric("brier_score", float(brier))
-
-        plt.figure()
-        plt.plot(prob_pred, prob_true, "o-", label="Model")
-        plt.plot([0, 1], [0, 1], "--", color="gray", label="Perfect")
-        plt.legend()
-        plt.title(f"Calibration (ECE={ece:.4f}, Brier={brier:.4f})")
-        mlf.log_figure(plt.gcf(), "calibration/reliability.png")
-        plt.close()
 
         # --- Log Model ---
         try:
