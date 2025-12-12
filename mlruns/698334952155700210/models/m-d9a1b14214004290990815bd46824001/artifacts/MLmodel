@@ -1,0 +1,21 @@
+artifact_path: file:c:/Developer/MSC-thesis/mlruns/698334952155700210/models/m-d9a1b14214004290990815bd46824001/artifacts
+flavors:
+  lightgbm:
+    code: null
+    data: model.pkl
+    lgb_version: 4.6.0
+    model_class: lightgbm.sklearn.LGBMClassifier
+  python_function:
+    data: model.pkl
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.lightgbm
+    python_version: 3.12.9
+mlflow_version: 3.5.0
+model_id: m-d9a1b14214004290990815bd46824001
+model_size_bytes: 33590294
+model_uuid: m-d9a1b14214004290990815bd46824001
+prompts: null
+run_id: a53d3ade6a9442a6a846cb93b90838e3
+utc_time_created: '2025-12-12 18:10:00.835923'
