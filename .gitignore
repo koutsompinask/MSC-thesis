@@ -2,7 +2,8 @@
 /ieee-fraud-detection-data
 /ai-gen
 *.pyc
-mlruns/**/models/**
+mlruns/*
+!mlruns/698334952155700210
 *txt
 !requirements.txt
 hp_search_artifacts
