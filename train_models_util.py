@@ -683,11 +683,9 @@ def train_lgbm_optuna(X, y, n_trials=30, random_state=42,
     return best_model, best_params, hist_df, plot_paths
 
 def train_ensemble(
-    X_tr: pd.DataFrame,
-    y_tr: pd.Series,
-    X_va: pd.DataFrame,
-    y_va: pd.Series,
-    n_trials: int = 30,
+    X: pd.DataFrame,
+    y: pd.Series,
+    n_trials: int = 10,
     random_state: int = 42,
 ):
     """Train an ensemble model by stacking base models with a logistic regression meta-learner.
@@ -748,6 +746,13 @@ def train_ensemble(
     print("[INFO] Generating meta-features...")
     # Prepare Optuna optimization
     trial_history = []
+    n = len(X)
+    split_idx1 = int(n * 0.8)
+
+    X_train = X.iloc[:split_idx1]
+    X_valid = X.iloc[split_idx1:]
+    y_train = y.iloc[:split_idx1]
+    y_valid = y.iloc[split_idx1:]
 
     def objective(trial):
         # Core hyperparameters
@@ -794,9 +799,9 @@ def train_ensemble(
             cv_scores = []
             cv_training_scores = []
             
-            for train_idx, val_idx in cv.split(X_tr, y_tr):
-                X_train_fold, X_val_fold = X_tr.iloc[train_idx], X_tr.iloc[val_idx]
-                y_train_fold, y_val_fold = y_tr.iloc[train_idx], y_tr.iloc[val_idx]
+            for train_idx, val_idx in cv.split(X, y):
+                X_train_fold, X_val_fold = X.iloc[train_idx], X.iloc[val_idx]
+                y_train_fold, y_val_fold = y.iloc[train_idx], y.iloc[val_idx]
                     
                 model = LogisticRegression(**params)
                 model.fit(X_train_fold, y_train_fold)
@@ -851,7 +856,7 @@ def train_ensemble(
     
     # Final model
     ensemble = LogisticRegression(**best_params, random_state=random_state)
-    ensemble.fit(X_tr, y_tr)
+    ensemble.fit(X_train, y_train)
     # Prepare best_params for logging (convert None to string for MLflow compatibility)
     best_params_log = best_params.copy()
     best_params_log["random_state"] = random_state
@@ -865,9 +870,9 @@ def train_ensemble(
         best_params_log.pop("l1_ratio")
     
     # Evaluate ensemble on validation set
-    y_prob_ensemble = ensemble.predict_proba(X_va)[:, 1]
-    ensemble_pr_auc = average_precision_score(y_va, y_prob_ensemble)
-    ensemble_roc_auc = roc_auc_score(y_va, y_prob_ensemble)
+    y_prob_ensemble = ensemble.predict_proba(X_valid)[:, 1]
+    ensemble_pr_auc = average_precision_score(y_valid, y_prob_ensemble)
+    ensemble_roc_auc = roc_auc_score(y_valid, y_prob_ensemble)
     
     print(f"[INFO] Ensemble validation PR-AUC: {ensemble_pr_auc:.4f}")
     print(f"[INFO] Ensemble validation ROC-AUC: {ensemble_roc_auc:.4f}")
