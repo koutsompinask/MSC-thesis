@@ -256,7 +256,7 @@ def train_xgb_optuna(X, y, n_trials=30, random_state=42,
             "gamma": trial.suggest_float("gamma", 0, 5),
             "tree_method": "gpu_hist" if  _gpu_available() and use_gpu else "hist",
             "objective": "binary:logistic",
-            "eval_metric": "aucpr",
+            "eval_metric": "auc",
             "scale_pos_weight": _scale_pos_weight(y),
             "n_jobs": -1,
             "random_state": random_state,
@@ -280,12 +280,12 @@ def train_xgb_optuna(X, y, n_trials=30, random_state=42,
                 
                 # Evaluate fold
                 y_prob = model.predict_proba(X_val_fold)[:, 1]
-                fold_score = average_precision_score(y_val_fold, y_prob)
+                fold_score = roc_auc_score(y_val_fold, y_prob)
                 cv_scores.append(fold_score)
                 
                 # Training score for this fold
                 y_prob_train = model.predict_proba(X_train_fold)[:, 1]
-                train_score = average_precision_score(y_train_fold, y_prob_train)
+                train_score = roc_auc_score(y_train_fold, y_prob_train)
                 cv_training_scores.append(train_score)
             
             # Average scores across folds
@@ -329,7 +329,7 @@ def train_xgb_optuna(X, y, n_trials=30, random_state=42,
     best_params_final["n_jobs"] = -1
     best_params_final["random_state"] = random_state
     best_params_final["verbosity"] = 0
-    best_params_final["eval_metric"] = "aucpr"
+    best_params_final["eval_metric"] = "auc"
 
     best_model = xgb.XGBClassifier(**best_params_final, early_stopping_rounds=100, enable_categorical=True)
     best_model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)], verbose=100)
@@ -404,7 +404,7 @@ def train_catboost_optuna(X, y, n_trials=30, random_state=42,
             "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1, 10),
             "subsample": trial.suggest_float("subsample", 0.6, 1.0),
             "border_count": trial.suggest_int("border_count", 32, 128),
-            "eval_metric": "PRAUC",
+            "eval_metric": "AUC",
             "task_type": "GPU" if  _gpu_available() and use_gpu else "CPU",
             "loss_function": "Logloss",
             "random_state": random_state,
@@ -430,12 +430,12 @@ def train_catboost_optuna(X, y, n_trials=30, random_state=42,
                 )
                 # Evaluate fold
                 y_prob = model.predict_proba(X_val_fold)[:, 1]
-                fold_score = average_precision_score(y_val_fold, y_prob)
+                fold_score = roc_auc_score(y_val_fold, y_prob)
                 cv_scores.append(fold_score)
                 
                 # Training score for this fold
                 y_prob_train = model.predict_proba(X_train_fold)[:, 1]
-                train_score = average_precision_score(y_train_fold, y_prob_train)
+                train_score = roc_auc_score(y_train_fold, y_prob_train)
                 cv_training_scores.append(train_score)
             
             # Average scores across folds
@@ -473,7 +473,7 @@ def train_catboost_optuna(X, y, n_trials=30, random_state=42,
     # This allows the model to potentially improve further with more iterations
     best_params_final = best_params.copy()
     best_params_final["iterations"] = 5000
-    best_params_final["eval_metric"] = "PRAUC"
+    best_params_final["eval_metric"] = "AUC"
     best_params_final["task_type"] = "GPU" if _gpu_available() and use_gpu else "CPU"
     best_params_final["random_seed"] = random_state
     best_params_final["scale_pos_weight"] = _scale_pos_weight(y_train)
@@ -598,18 +598,18 @@ def train_lgbm_optuna(X, y, n_trials=30, random_state=42,
                 model.fit(
                     X_train_fold, y_train_fold,
                     eval_set=[(X_val_fold, y_val_fold)],
-                    eval_metric="aucpr",
+                    eval_metric="auc",
                     callbacks=[lgb.early_stopping(stopping_rounds=early_stopping_rounds, verbose=False)]
                 )
                 
                 # Evaluate fold
                 y_prob = model.predict_proba(X_val_fold)[:, 1]
-                fold_score = average_precision_score(y_val_fold, y_prob)
+                fold_score = roc_auc_score(y_val_fold, y_prob)
                 cv_scores.append(fold_score)
                 
                 # Training score for this fold
                 y_prob_train = model.predict_proba(X_train_fold)[:, 1]
-                train_score = average_precision_score(y_train_fold, y_prob_train)
+                train_score = roc_auc_score(y_train_fold, y_prob_train)
                 cv_training_scores.append(train_score)
             
             # Average scores across folds
@@ -654,12 +654,12 @@ def train_lgbm_optuna(X, y, n_trials=30, random_state=42,
     best_params_final["device"] = "gpu" if _gpu_available() and use_gpu else "cpu"
     best_params_final["random_state"] = random_state
     best_params_final["scale_pos_weight"] = _scale_pos_weight(y_train)
-    best_params_final["eval_metric"] = "aucpr"
+    best_params_final["eval_metric"] = "auc"
     
     best_model = lgb.LGBMClassifier(**best_params_final, categorical_feature=categorical_features)
     best_model.fit(X_train, y_train,
                     eval_set=[(X_valid, y_valid)],
-                    eval_metric="aucpr",
+                    eval_metric="auc",
                     callbacks=[lgb.early_stopping(100, verbose=False), lgb.log_evaluation(period=50)])
     
     # Update best_params to include n_estimators for logging consistency
@@ -808,12 +808,12 @@ def train_ensemble(
                  
                 # Evaluate fold
                 y_prob = model.predict_proba(X_val_fold)[:, 1]
-                fold_score = average_precision_score(y_val_fold, y_prob)
+                fold_score = roc_auc_score(y_val_fold, y_prob)
                 cv_scores.append(fold_score)
                 
                 # Training score for this fold
                 y_prob_train = model.predict_proba(X_train_fold)[:, 1]
-                train_score = average_precision_score(y_train_fold, y_prob_train)
+                train_score = roc_auc_score(y_train_fold, y_prob_train)
                 cv_training_scores.append(train_score)
             
             # Average scores across folds
