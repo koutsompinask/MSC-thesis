@@ -18,9 +18,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import optuna
 from optuna.pruners import MedianPruner
-import mlflow as mlf
 from pathlib import Path
-from sklearn.model_selection import train_test_split, StratifiedKFold, TimeSeriesSplit
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import (
     roc_auc_score,
     average_precision_score
@@ -77,6 +76,37 @@ def _scale_pos_weight(y: np.ndarray, factor = 1.0) -> float:
     pos = np.sum(y == 1)
     neg = np.sum(y == 0)
     return factor*float(neg / max(1, pos))
+
+def train_baseline_models(X_train: pd.DataFrame, y_train: pd.Series, random_state: int = 42) -> dict[str, object]:
+    """Train simple baseline models for comparison."""
+    models = {
+        "log_reg": LogisticRegression(
+            max_iter=2000,
+            n_jobs=-1,
+            class_weight="balanced",
+            random_state=random_state,
+        ),
+        "decision_tree": DecisionTreeClassifier(
+            max_depth=8,
+            min_samples_leaf=100,
+            class_weight="balanced",
+            random_state=random_state,
+        ),
+        "random_forest": RandomForestClassifier(
+            n_estimators=300,
+            max_depth=12,
+            min_samples_leaf=50,
+            n_jobs=-1,
+            class_weight="balanced_subsample",
+            random_state=random_state,
+        ),
+    }
+
+    trained = {}
+    for name, model in models.items():
+        model.fit(X_train, y_train)
+        trained[name] = model
+    return trained
 
 def eval_function(y_true, y_prob, threshold: float = 0.5) -> float:
     """Custom evaluation function combining false negatives and false positives.

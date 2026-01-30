@@ -4,7 +4,10 @@ import matplotlib.pyplot as plt
 import shap
 import mlflow as mlf
 import mlflow.xgboost as mlf_xgboost, mlflow.catboost as mlf_catboost, mlflow.lightgbm as mlf_lightgbm, mlflow.sklearn as mlf_sklearn
+import json
 from pathlib import Path
+from typing import Iterable
+import lightgbm as lgb
 from sklearn.metrics import (
     roc_auc_score,
     roc_curve,
@@ -12,12 +15,13 @@ from sklearn.metrics import (
     auc,
     precision_recall_fscore_support,
     precision_recall_curve,
-    confusion_matrix,
-    brier_score_loss
+    confusion_matrix
 )
 from sklearn.calibration import calibration_curve
 import tempfile
 from train_models_util import eval_function
+from train_models_util import train_baseline_models
+from feature_importance import save_shap_case_studies
 
 def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path, threshold: float = 0.5) -> dict[str, Path]:
     """Generate and save evaluation plots for binary classification results.
@@ -136,6 +140,179 @@ def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path, thres
 
     return paths
 
+def _sanitize_run_name(name: str) -> str:
+    safe = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in name)
+    return safe[:120] if len(safe) > 120 else safe
+
+def _ensure_dir(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+def _compute_topk_metrics(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    k_list: Iterable[int] | None = None,
+    k_percents: Iterable[float] | None = None,
+) -> dict[str, float]:
+    metrics: dict[str, float] = {}
+    n = len(y_true)
+    if n == 0:
+        return metrics
+
+    y_true = np.asarray(y_true)
+    y_prob = np.asarray(y_prob)
+    order = np.argsort(-y_prob)
+    y_sorted = y_true[order]
+    total_pos = float(y_true.sum())
+
+    k_values: list[int] = []
+    if k_list:
+        k_values.extend([int(k) for k in k_list])
+    if k_percents:
+        k_values.extend([int(max(1, round(p * n))) for p in k_percents])
+    k_values = sorted(set([k for k in k_values if k > 0]))
+
+    for k in k_values:
+        k_eff = min(k, n)
+        hits = float(y_sorted[:k_eff].sum())
+        precision = hits / k_eff if k_eff > 0 else 0.0
+        recall = hits / total_pos if total_pos > 0 else 0.0
+        metrics[f"precision_at_{k_eff}"] = precision
+        metrics[f"recall_at_{k_eff}"] = recall
+    return metrics
+
+def _find_cost_optimal_threshold(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    n_grid: int = 200,
+) -> tuple[float, float]:
+    y_true = np.asarray(y_true)
+    y_prob = np.asarray(y_prob)
+    if len(y_true) == 0:
+        return 0.5, float("nan")
+
+    thresholds = np.unique(np.quantile(y_prob, np.linspace(0, 1, max(2, n_grid))))
+    best_t = 0.5
+    best_cost = float("inf")
+    for t in thresholds:
+        cost = eval_function(y_true, y_prob, threshold=float(t))
+        if cost < best_cost:
+            best_cost = cost
+            best_t = float(t)
+    return best_t, best_cost
+
+def _bootstrap_ci(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    threshold: float,
+    n_bootstrap: int = 200,
+    seed: int = 42,
+) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    y_true = np.asarray(y_true)
+    y_prob = np.asarray(y_prob)
+    n = len(y_true)
+
+    rows = []
+    for _ in range(n_bootstrap):
+        idx = rng.integers(0, n, size=n)
+        y_b = y_true[idx]
+        y_p = y_prob[idx]
+        if len(np.unique(y_b)) < 2:
+            continue
+        y_pred = (y_p >= threshold).astype(int)
+        precision, recall, f1, _ = precision_recall_fscore_support(y_b, y_pred, average="binary", zero_division=0)
+        rows.append({
+            "roc_auc": roc_auc_score(y_b, y_p),
+            "pr_auc": average_precision_score(y_b, y_p),
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "custom_loss": eval_function(y_b, y_p, threshold=threshold),
+        })
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    ci = []
+    for col in df.columns:
+        ci.append({
+            "metric": col,
+            "mean": float(df[col].mean()),
+            "ci_low": float(df[col].quantile(0.025)),
+            "ci_high": float(df[col].quantile(0.975)),
+        })
+    return pd.DataFrame(ci)
+
+def _temporal_slice_eval(
+    X: pd.DataFrame,
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    time_col: str,
+    threshold: float = 0.5,
+    time_unit: str = "s",
+    time_freq: str = "M",
+    time_origin: str | None = "start",
+    min_slice_size: int = 200,
+) -> pd.DataFrame:
+    if time_col not in X.columns:
+        return pd.DataFrame()
+
+    series = X[time_col]
+    if np.issubdtype(series.dtype, np.number):
+        if time_origin in (None, "start"):
+            offset = series.min()
+            series = series - offset
+            time_index = pd.to_datetime(series, unit=time_unit, origin="unix")
+        else:
+            time_index = pd.to_datetime(series, unit=time_unit, origin=time_origin)
+    else:
+        time_index = pd.to_datetime(series, errors="coerce")
+
+    df = pd.DataFrame({
+        "time_index": time_index,
+        "y_true": y_true,
+        "y_prob": y_prob,
+    }).dropna(subset=["time_index"])
+
+    df["slice"] = df["time_index"].dt.to_period(time_freq).dt.to_timestamp()
+    rows = []
+    for slice_val, group in df.groupby("slice"):
+        if len(group) < min_slice_size or group["y_true"].nunique() < 2:
+            continue
+        y_t = group["y_true"].values
+        y_p = group["y_prob"].values
+        y_pred = (y_p >= threshold).astype(int)
+        precision, recall, f1, _ = precision_recall_fscore_support(y_t, y_pred, average="binary", zero_division=0)
+        rows.append({
+            "slice": slice_val,
+            "n": len(group),
+            "roc_auc": roc_auc_score(y_t, y_p),
+            "pr_auc": average_precision_score(y_t, y_p),
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "custom_loss": eval_function(y_t, y_p, threshold=threshold),
+        })
+    return pd.DataFrame(rows).sort_values("slice")
+
+def _plot_temporal_metrics(df: pd.DataFrame, out_path: Path) -> None:
+    if df.empty:
+        return
+    plt.figure(figsize=(12, 6))
+    for col in ["roc_auc", "pr_auc", "precision", "recall", "f1", "custom_loss"]:
+        if col in df.columns:
+            plt.plot(df["slice"], df[col], label=col)
+    plt.xlabel("Time slice")
+    plt.ylabel("Metric")
+    plt.title("Temporal Slice Evaluation")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close()
+
 # ---------------------------
 #  UNIVERSAL EVALUATION LOGIC
 # ---------------------------
@@ -151,6 +328,19 @@ def evaluate_and_log(
     hp_search_history: pd.DataFrame | None = None,
     hp_search_plots: list[Path] | None = None,
     prediction_threshold: float = 0.5,
+    results_dir: str | Path = "ai-gen/results",
+    top_k_list: list[int] | None = None,
+    top_k_percents: list[float] | None = None,
+    cost_threshold_selection: bool = False,
+    cost_threshold_grid: int = 200,
+    bootstrap_n: int = 0,
+    bootstrap_seed: int = 42,
+    time_col: str | None = None,
+    time_unit: str = "s",
+    time_freq: str = "M",
+    time_origin: str | None = "start",
+    min_slice_size: int = 200,
+    shap_case_studies: int | None = None,
 ):
     """Evaluate a binary classifier and log comprehensive results to MLflow.
     
@@ -229,6 +419,8 @@ def evaluate_and_log(
     mlf.set_tracking_uri(tracking_uri)
     mlf.set_experiment(experiment_name)
 
+    run_dir = _ensure_dir(Path(results_dir) / _sanitize_run_name(run_name))
+
     with tempfile.TemporaryDirectory() as td, mlf.start_run(run_name=run_name):
         # Tag model type and Optuna params
         mlf.set_tag("model_type", model_type)
@@ -258,8 +450,33 @@ def evaluate_and_log(
             "f1": f1,
             "custom_loss": custom_loss
         }
+
+        # Precision@K / Recall@K
+        topk_metrics = _compute_topk_metrics(y_va, y_prob, top_k_list, top_k_percents)
+        metrics.update(topk_metrics)
+
+        # Cost-based threshold selection
+        if cost_threshold_selection:
+            opt_t, opt_cost = _find_cost_optimal_threshold(y_va, y_prob, n_grid=cost_threshold_grid)
+            y_pred_opt = (y_prob >= opt_t).astype(int)
+            opt_precision, opt_recall, opt_f1, _ = precision_recall_fscore_support(
+                y_va, y_pred_opt, average="binary", zero_division=0
+            )
+            metrics.update({
+                "cost_opt_threshold": float(opt_t),
+                "cost_opt_custom_loss": float(opt_cost),
+                "cost_opt_precision": float(opt_precision),
+                "cost_opt_recall": float(opt_recall),
+                "cost_opt_f1": float(opt_f1),
+            })
+
         mlf.log_metrics(metrics)
         print(f"[INFO] Logged metrics: {metrics}")
+
+        metrics_path = run_dir / "metrics.json"
+        metrics_json = {k: float(v) if isinstance(v, (np.floating, np.integer)) else v for k, v in metrics.items()}
+        metrics_path.write_text(json.dumps(metrics_json, indent=2))
+
         artifacts_dir = Path(td)
         plot_paths = _plot_artifacts(y_va, y_prob, artifacts_dir / "plots", threshold=prediction_threshold)
         for name, path in plot_paths.items():
@@ -284,10 +501,28 @@ def evaluate_and_log(
             plt.figure()
             shap.summary_plot(shap_values, X_shap, show=False)
             mlf.log_figure(plt.gcf(), "explainability/shap_summary.png")
+            plt.savefig(run_dir / "shap_summary.png", dpi=150, bbox_inches="tight")
             plt.close()
             print("[INFO] Logged SHAP summary plot.")
         except Exception as e:
             print(f"[WARN] SHAP skipped: {e}")
+
+        # --- SHAP Case Studies ---
+        if shap_case_studies and shap_case_studies > 0:
+            try:
+                cs_dir = run_dir / "shap_case_studies"
+                save_shap_case_studies(
+                    model=model,
+                    X=X_va,
+                    y=y_va,
+                    out_dir=cs_dir,
+                    n_cases=shap_case_studies,
+                    random_state=bootstrap_seed,
+                    prediction_threshold=prediction_threshold,
+                )
+                mlf.log_artifacts(str(cs_dir), artifact_path="explainability/case_studies")
+            except Exception as e:
+                print(f"[WARN] SHAP case studies skipped: {e}")
 
 
         # --- Log Model ---
@@ -325,5 +560,87 @@ def evaluate_and_log(
             for p in hp_search_plots:
                 mlf.log_artifact(str(p), artifact_path="hp_search")
 
+        # --- Bootstrap confidence intervals ---
+        if bootstrap_n and bootstrap_n > 0:
+            ci_df = _bootstrap_ci(
+                y_true=np.asarray(y_va),
+                y_prob=np.asarray(y_prob),
+                threshold=prediction_threshold,
+                n_bootstrap=bootstrap_n,
+                seed=bootstrap_seed,
+            )
+            if not ci_df.empty:
+                ci_path = run_dir / "bootstrap_ci.csv"
+                ci_df.to_csv(ci_path, index=False)
+                mlf.log_artifact(str(ci_path), artifact_path="stats")
+                for _, row in ci_df.iterrows():
+                    mlf.log_metric(f"{row['metric']}_ci_low", float(row["ci_low"]))
+                    mlf.log_metric(f"{row['metric']}_ci_high", float(row["ci_high"]))
+
+        # --- Temporal slice evaluation ---
+        if time_col:
+            slice_df = _temporal_slice_eval(
+                X=X_va,
+                y_true=np.asarray(y_va),
+                y_prob=np.asarray(y_prob),
+                time_col=time_col,
+                threshold=prediction_threshold,
+                time_unit=time_unit,
+                time_freq=time_freq,
+                time_origin=time_origin,
+                min_slice_size=min_slice_size,
+            )
+            if not slice_df.empty:
+                slice_dir = _ensure_dir(run_dir / "temporal_slices")
+                slice_csv = slice_dir / "temporal_metrics.csv"
+                slice_df.to_csv(slice_csv, index=False)
+                mlf.log_artifact(str(slice_csv), artifact_path="temporal")
+                slice_plot = slice_dir / "temporal_metrics.png"
+                _plot_temporal_metrics(slice_df, slice_plot)
+                mlf.log_artifact(str(slice_plot), artifact_path="temporal")
+
         print("[INFO] Evaluation complete and logged.")
     return metrics
+
+def run_baseline_table(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+    results_dir: str | Path = "ai-gen/results",
+    prediction_threshold: float = 0.5,
+    top_k_list: list[int] | None = None,
+    top_k_percents: list[float] | None = None,
+    cost_threshold_grid: int = 200,
+    run_prefix: str = "baseline",
+) -> pd.DataFrame:
+    """Train baseline models and return a consolidated metrics table."""
+    models = train_baseline_models(X_train, y_train)
+    rows = []
+    for name, model in models.items():
+        if hasattr(model, "predict_proba"):
+            y_prob = model.predict_proba(X_test)[:, 1]
+        else:
+            y_prob = model.predict(X_test)
+        y_pred = (y_prob >= prediction_threshold).astype(int)
+        precision, recall, f1, _ = precision_recall_fscore_support(y_test, y_pred, average="binary", zero_division=0)
+        metrics = {
+            "model": name,
+            "roc_auc": roc_auc_score(y_test, y_prob),
+            "pr_auc": average_precision_score(y_test, y_prob),
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "custom_loss": eval_function(y_test, y_prob, threshold=prediction_threshold),
+        }
+        metrics.update(_compute_topk_metrics(y_test, y_prob, top_k_list, top_k_percents))
+        opt_t, opt_cost = _find_cost_optimal_threshold(y_test, y_prob, n_grid=cost_threshold_grid)
+        metrics["cost_opt_threshold"] = float(opt_t)
+        metrics["cost_opt_custom_loss"] = float(opt_cost)
+        rows.append(metrics)
+
+    df = pd.DataFrame(rows)
+    out_dir = _ensure_dir(Path(results_dir) / "baselines")
+    out_path = out_dir / f"{_sanitize_run_name(run_prefix)}_table.csv"
+    df.to_csv(out_path, index=False)
+    return df
