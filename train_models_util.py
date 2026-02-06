@@ -129,7 +129,6 @@ def eval_function(y_true, y_prob, threshold: float = 0.5) -> float:
     fn = np.sum((y_true == 1) & (y_prob < threshold))
     return (100*fn + fp)/len(y_true)
 
-
 def minimize_eval_metric_with_threshold(model, X, y_true):
     if hasattr(model, "predict_proba"):
         y_prob = model.predict_proba(X)[:, 1]
