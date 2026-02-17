@@ -15,24 +15,21 @@ from typing import Optional
 from pathlib import Path
 
 def get_top_features_shap(model, X, y, max_fraud=5000, random_state: int = 42):
-    """
-    Computes SHAP feature importance for a trained tree-based model,
-    using all (or up to max_fraud) fraud cases and an equal-sized 
-    sample of non-fraud cases.
+    """Compute global SHAP feature importance from a balanced sample.
 
-    Parameters
-    ----------
-    model : trained XGBoost / LightGBM / CatBoost model
-    X : pandas DataFrame 
-        Input data for SHAP evaluation
-    y : pandas Series or array-like
-        Ground-truth labels (0 = non-fraud, 1 = fraud)
-    max_fraud : int
-        Maximum number of fraud examples to include
+    Args:
+        model: Trained tree-based model.
+        X: Feature matrix used for SHAP evaluation.
+        y: Ground-truth binary labels.
+        max_fraud: Maximum number of fraud rows sampled.
+        random_state: Random seed for sampling.
 
-    Returns
-    -------
-    DataFrame with columns: feature, importance (sorted)
+    Returns:
+        pd.DataFrame: DataFrame sorted by descending importance with columns
+        `feature` and `importance`.
+
+    Raises:
+        RuntimeError: If SHAP explainer initialization or SHAP-value computation fails.
     """
 
     # ---------- 1. Build SHAP sample ----------
@@ -98,27 +95,26 @@ def save_shap_case_studies(
     make_bucket_artifacts: bool = True,
     bucket_top_k: int = 15,
 ) -> pd.DataFrame:
-    """Generate SHAP case studies and (optionally) per-bucket SHAP summaries/plots.
+    """Generate SHAP case-study artifacts and optional bucket summaries.
 
-    Sampling strategy (thesis-friendly):
-      - Balanced coverage across TP/TN/FP/FN buckets.
-      - Within each bucket, select a mix of:
-          * most confident cases (extremes)
-          * most borderline cases (closest to threshold)
-
-    Saves per-case:
-      - case_studies_index.csv (metadata for all saved cases)
-      - case_XX_summary.csv (feature values + SHAP values, sorted by |SHAP|)
-      - case_XX_waterfall.png (best-effort, if plotting succeeds)
-
-    NEW per-bucket artifacts (if make_bucket_artifacts=True):
-      - bucket_feature_summary_all.csv (mean_abs_shap + mean_shap per feature per bucket)
-      - bucket_<BUCKET>_top_features.csv (top K features for that bucket)
-      - bucket_<BUCKET>_mean_abs_shap.png (horizontal bar plot of top K mean(|SHAP|))
-      - bucket_<BUCKET>_mean_shap.png (horizontal bar plot of mean(SHAP) for same features)
+    Args:
+        model: Trained tree-based model.
+        X: Feature matrix.
+        y: Ground-truth binary labels.
+        out_dir: Output directory for generated artifacts.
+        n_cases: Total number of case studies to sample.
+        random_state: Random seed for sampling.
+        prediction_threshold: Threshold used to form TP/TN/FP/FN buckets.
+        max_display: Maximum displayed features in waterfall plots.
+        make_bucket_artifacts: Whether to create per-bucket aggregate outputs.
+        bucket_top_k: Number of top features kept per bucket.
 
     Returns:
-      - index_df: one row per case study with metadata.
+        pd.DataFrame: Index table describing all generated case studies.
+
+    Raises:
+        ValueError: If labels are misaligned with `X` or no cases can be selected.
+        RuntimeError: If SHAP explainer initialization fails.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -149,7 +145,16 @@ def save_shap_case_studies(
     rng = np.random.default_rng(random_state)
 
     def pick_bucket(idxs: np.ndarray, k: int, prefer_high_prob: bool) -> np.ndarray:
-        """Pick k indices from a bucket as half extremes + half borderline."""
+        """Sample indices from one confusion-matrix bucket.
+
+        Args:
+            idxs: Candidate positional indices for the bucket.
+            k: Number of samples requested.
+            prefer_high_prob: Whether to treat higher probabilities as extremes.
+
+        Returns:
+            np.ndarray: Selected positional indices.
+        """
         if k <= 0 or len(idxs) == 0:
             return np.array([], dtype=int)
 

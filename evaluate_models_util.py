@@ -24,38 +24,17 @@ from train_models_util import train_baseline_models
 from feature_importance import save_shap_case_studies
 
 def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path, threshold: float = 0.5) -> dict[str, Path]:
-    """Generate and save evaluation plots for binary classification results.
-    
-    Creates and saves four key evaluation plots:
-    - ROC curve showing true positive vs false positive rate trade-off
-    - Precision-Recall curve showing precision vs recall trade-off
-    - Confusion matrix showing prediction counts at specified threshold
-    - FP/FN over time showing cumulative false positive and negative rates across samples
-    
+    """Create evaluation plots for a binary classifier.
+
     Args:
-        y_true: True binary labels (0 or 1).
-        y_prob: Predicted probabilities for the positive class (between 0 and 1).
-        out_dir: Directory path where plots will be saved.
-        threshold: Classification threshold for converting probabilities to binary predictions.
-            Used for confusion matrix and FP/FN analysis. Defaults to 0.5.
-        
+        y_true: Ground-truth binary labels.
+        y_prob: Predicted positive-class probabilities.
+        out_dir: Directory where plot artifacts are written.
+        threshold: Probability threshold used for thresholded plots.
+
     Returns:
-        dict[str, Path]: Dictionary mapping plot names to their saved file paths.
-            Keys: 
-                'roc_curve': Path to ROC curve plot
-                'pr_curve': Path to precision-recall curve plot
-                'confusion_matrix': Path to confusion matrix plot
-                'fp_fn_over_time': Path to FP/FN rates over time plot
-            
-    Example:
-        >>> y_true = np.array([0, 1, 1, 0])
-        >>> y_prob = np.array([0.1, 0.9, 0.8, 0.3])
-        >>> paths = _plot_artifacts(y_true, y_prob, Path("evaluation_plots"))
-        >>> print(f"ROC curve saved to: {paths['roc_curve']}")
-    
-    Note:
-        All plots are saved as PNG files with 150 DPI resolution.
-        The plots include relevant metrics like AUC-ROC and AP scores.
+        dict[str, Path]: Paths keyed by artifact name (`roc_curve`, `pr_curve`,
+        `confusion_matrix`, `fp_fn_over_time`).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     paths: dict[str, Path] = {}
@@ -141,10 +120,27 @@ def _plot_artifacts(y_true: np.ndarray, y_prob: np.ndarray, out_dir: Path, thres
     return paths
 
 def _sanitize_run_name(name: str) -> str:
+    """Normalize a run name so it is safe for file paths.
+
+    Args:
+        name: Raw run name.
+
+    Returns:
+        str: Sanitized run name with only alphanumeric, `_`, and `-` characters,
+        truncated to 120 chars.
+    """
     safe = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in name)
     return safe[:120] if len(safe) > 120 else safe
 
 def _ensure_dir(path: Path) -> Path:
+    """Create a directory if missing and return it.
+
+    Args:
+        path: Directory path to create.
+
+    Returns:
+        Path: The same path after ensuring it exists.
+    """
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -154,6 +150,18 @@ def _compute_topk_metrics(
     k_list: Iterable[int] | None = None,
     k_percents: Iterable[float] | None = None,
 ) -> dict[str, float]:
+    """Compute precision@k and recall@k metrics.
+
+    Args:
+        y_true: Ground-truth binary labels.
+        y_prob: Predicted positive-class probabilities.
+        k_list: Absolute `k` values for top-k metrics.
+        k_percents: Fractional `k` values as percentages of dataset size.
+
+    Returns:
+        dict[str, float]: Metric dictionary with keys like `precision_at_100` and
+        `recall_at_100`.
+    """
     metrics: dict[str, float] = {}
     n = len(y_true)
     if n == 0:
@@ -186,6 +194,16 @@ def _find_cost_optimal_threshold(
     y_prob: np.ndarray,
     n_grid: int = 200,
 ) -> tuple[float, float]:
+    """Find a probability threshold that minimizes the custom loss.
+
+    Args:
+        y_true: Ground-truth binary labels.
+        y_prob: Predicted positive-class probabilities.
+        n_grid: Number of quantile grid points used for threshold search.
+
+    Returns:
+        tuple[float, float]: Best threshold and its corresponding custom loss.
+    """
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
     if len(y_true) == 0:
@@ -208,6 +226,18 @@ def _bootstrap_ci(
     n_bootstrap: int = 200,
     seed: int = 42,
 ) -> pd.DataFrame:
+    """Estimate bootstrap confidence intervals for evaluation metrics.
+
+    Args:
+        y_true: Ground-truth binary labels.
+        y_prob: Predicted positive-class probabilities.
+        threshold: Probability threshold for thresholded metrics.
+        n_bootstrap: Number of bootstrap resamples.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        pd.DataFrame: One row per metric with `mean`, `ci_low`, and `ci_high`.
+    """
     rng = np.random.default_rng(seed)
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
@@ -256,6 +286,22 @@ def _temporal_slice_eval(
     time_origin: str | None = "start",
     min_slice_size: int = 200,
 ) -> pd.DataFrame:
+    """Evaluate model performance by time slices.
+
+    Args:
+        X: Feature matrix containing `time_col`.
+        y_true: Ground-truth binary labels.
+        y_prob: Predicted positive-class probabilities.
+        time_col: Column used to build temporal slices.
+        threshold: Probability threshold for thresholded metrics.
+        time_unit: Unit for numeric time columns passed to `to_datetime`.
+        time_freq: Pandas period frequency for slicing (for example, `M`).
+        time_origin: Origin for numeric timestamps.
+        min_slice_size: Minimum samples required per time slice.
+
+    Returns:
+        pd.DataFrame: Per-slice metric table sorted by slice timestamp.
+    """
     if time_col not in X.columns:
         return pd.DataFrame()
 
@@ -298,6 +344,12 @@ def _temporal_slice_eval(
     return pd.DataFrame(rows).sort_values("slice")
 
 def _plot_temporal_metrics(df: pd.DataFrame, out_path: Path) -> None:
+    """Plot temporal metrics and save to disk.
+
+    Args:
+        df: Temporal metrics DataFrame.
+        out_path: Output image path.
+    """
     if df.empty:
         return
     plt.figure(figsize=(12, 6))
@@ -342,64 +394,36 @@ def evaluate_and_log(
     min_slice_size: int = 200,
     shap_case_studies: int | None = None,
 ):
-    """Evaluate a binary classifier and log comprehensive results to MLflow.
-    
-    Performs extensive model evaluation including:
-    - Threshold-independent metrics (ROC-AUC, PR-AUC on probabilities)
-    - Threshold-dependent metrics (F1, precision, recall using custom threshold)
-    - SHAP feature importance analysis
-    - Calibration assessment
-    - Performance visualization
-    
-    Automatically detects model type and logs everything to MLflow for tracking.
-    
+    """Evaluate a binary classifier and log artifacts to MLflow.
+
     Args:
-        model: Any binary classifier supporting predict_proba (XGBoost, CatBoost,
-            LightGBM, or scikit-learn style).
-        X_va: Validation features DataFrame.
-        y_va: Validation target Series.
-        experiment_name: Name of the MLflow experiment for logging.
-        run_name: Name for this specific MLflow run.
-        model_type: Optional model type string for tagging. If None, auto-detects.
-            Valid values: "xgboost", "catboost", "lightgbm", "sklearn".
-        best_params: Optional dictionary of best hyperparameters to log.
-        tracking_uri: MLflow tracking URI. Defaults to "mlruns".
-        hp_search_history: Optional DataFrame with hyperparameter optimization history.
-        hp_search_plots: Optional list of hyperparameter visualization plot paths.
-        prediction_threshold: Classification probability threshold for converting probabilities
-            to binary predictions. Affects F1, precision, recall, custom_loss metrics, and plots.
-            Defaults to 0.5. ROC-AUC and PR-AUC are always computed on probabilities regardless
-            of this threshold.
-        
+        model: Trained classifier with `predict_proba` or `predict`.
+        X_va: Validation features.
+        y_va: Validation labels.
+        experiment_name: MLflow experiment name.
+        run_name: MLflow run name.
+        model_type: Optional model-type override.
+        best_params: Optional best hyperparameters to log as params.
+        tracking_uri: MLflow tracking URI.
+        hp_search_history: Optional hyperparameter search history.
+        hp_search_plots: Optional plot paths from hyperparameter search.
+        prediction_threshold: Probability threshold for binary predictions.
+        results_dir: Local results directory for saved artifacts.
+        top_k_list: Optional absolute k values for top-k metrics.
+        top_k_percents: Optional fractional k values for top-k metrics.
+        cost_threshold_selection: Whether to compute cost-optimal threshold metrics.
+        cost_threshold_grid: Search grid size for cost-optimal threshold.
+        bootstrap_n: Number of bootstrap resamples for confidence intervals.
+        bootstrap_seed: Random seed for bootstrap and case-study sampling.
+        time_col: Optional timestamp column for temporal slice evaluation.
+        time_unit: Unit used for numeric timestamps.
+        time_freq: Frequency used to define temporal slices.
+        time_origin: Origin for numeric timestamp conversion.
+        min_slice_size: Minimum rows required per temporal slice.
+        shap_case_studies: Optional number of SHAP case studies to export.
+
     Returns:
-        dict: Performance metrics including:
-            - roc_auc: Area under ROC curve (threshold-independent, on probabilities)
-            - pr_auc: Area under precision-recall curve (threshold-independent, on probabilities)
-            - precision: Precision at specified threshold
-            - recall: Recall at specified threshold
-            - f1: F1 score at specified threshold
-            - custom_loss: Custom fraud cost metric at specified threshold
-            
-    Example:
-        >>> model = XGBClassifier()
-        >>> model.fit(X_train, y_train)
-        >>> metrics = evaluate_and_log(
-        ...     model=model,
-        ...     X_va=X_val,
-        ...     y_va=y_val,
-        ...     experiment_name="fraud_detection",
-        ...     run_name="xgboost_v1",
-        ...     prediction_threshold=0.3
-        ... )
-        >>> print(f"PR-AUC: {metrics['pr_auc']:.4f}")
-        >>> print(f"Custom loss @ threshold=0.3: {metrics['custom_loss']:.4f}")
-        
-    Note:
-        - SHAP analysis is performed on a balanced subset of validation data
-          (up to 500 samples per class) to keep computation tractable.
-        - ROC-AUC and PR-AUC are always computed on predicted probabilities and are 
-          threshold-independent. Only precision, recall, F1, and custom_loss depend on the threshold.
-        - All plots use the specified prediction_threshold for threshold-dependent visualizations.
+        dict[str, float]: Computed metric values logged for the run.
     """
     # --- Detect model type automatically if not provided ---
     if model_type is None:
@@ -614,7 +638,23 @@ def run_baseline_table(
     cost_threshold_grid: int = 200,
     run_prefix: str = "baseline",
 ) -> pd.DataFrame:
-    """Train baseline models and return a consolidated metrics table."""
+    """Train baseline models and build a consolidated metrics table.
+
+    Args:
+        X_train: Training feature matrix.
+        y_train: Training labels.
+        X_test: Evaluation feature matrix.
+        y_test: Evaluation labels.
+        results_dir: Output directory for the baseline table.
+        prediction_threshold: Probability threshold for binary predictions.
+        top_k_list: Optional absolute k values for top-k metrics.
+        top_k_percents: Optional fractional k values for top-k metrics.
+        cost_threshold_grid: Search grid size for cost-optimal threshold.
+        run_prefix: Prefix used in the output CSV filename.
+
+    Returns:
+        pd.DataFrame: One row per baseline model with evaluation metrics.
+    """
     models = train_baseline_models(X_train, y_train)
     rows = []
     for name, model in models.items():

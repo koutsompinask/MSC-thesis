@@ -33,17 +33,10 @@ import lightgbm as lgb
 from tqdm.auto import tqdm
 
 def _gpu_available() -> bool:
-    """Check if GPU is available for XGBoost training.
-    
-    Attempts to create and fit a minimal XGBoost model with GPU acceleration.
-    If successful, GPU is available; otherwise, falls back to CPU.
-    
+    """Check whether GPU training is available for XGBoost.
+
     Returns:
-        bool: True if GPU is available and working with XGBoost, False otherwise.
-    
-    Example:
-        >>> use_gpu = _gpu_available()
-        >>> print(f"GPU acceleration available: {use_gpu}")
+        bool: `True` if a tiny GPU-based XGBoost fit succeeds, otherwise `False`.
     """
     try:
         # Attempt a tiny GPU-boosted fit; if it fails, fall back to CPU
@@ -59,26 +52,30 @@ def _gpu_available() -> bool:
         return False
 
 def _scale_pos_weight(y: np.ndarray, factor = 1.0) -> float:
-    """Calculate scaling factor for positive class weight in imbalanced datasets.
-    
+    """Compute the imbalance ratio used as positive-class weight.
+
     Args:
-        y: Array of binary labels (0 or 1).
-        factor: Multiplier factor to adjust the scale of the weight. Defaults to 1.
-        
+        y: Binary labels.
+        factor: Optional multiplier applied to the imbalance ratio.
+
     Returns:
-        float: Ratio of negative to positive samples, used to balance class weights.
-        
-    Example:
-        >>> y = np.array([0, 0, 0, 1])  # imbalanced dataset
-        >>> weight = _scale_pos_weight(y)
-        >>> print(f"Positive class weight scaling: {weight}")  # would print 3.0
+        float: `factor * (n_negative / max(1, n_positive))`.
     """
     pos = np.sum(y == 1)
     neg = np.sum(y == 0)
     return factor*float(neg / max(1, pos))
 
 def train_baseline_models(X_train: pd.DataFrame, y_train: pd.Series, random_state: int = 42) -> dict[str, object]:
-    """Train simple baseline models for comparison."""
+    """Train baseline classifiers used for comparison.
+
+    Args:
+        X_train: Training feature matrix.
+        y_train: Training labels.
+        random_state: Random seed used by baseline estimators.
+
+    Returns:
+        dict[str, object]: Mapping of model name to fitted estimator.
+    """
     models = {
         "log_reg": LogisticRegression(
             max_iter=2000,
@@ -109,27 +106,31 @@ def train_baseline_models(X_train: pd.DataFrame, y_train: pd.Series, random_stat
     return trained
 
 def eval_function(y_true, y_prob, threshold: float = 0.5) -> float:
-    """Custom evaluation function combining false negatives and false positives.
-    
+    """Compute the custom fraud loss from probabilities.
+
     Args:
-        y_true: True binary labels (0 or 1).
-        y_prob: Predicted probabilities for the positive class.
-        threshold: Classification threshold for converting probabilities to binary predictions. Defaults to 0.5.
-        
+        y_true: Ground-truth binary labels.
+        y_prob: Predicted positive-class probabilities.
+        threshold: Probability threshold for converting to class predictions.
+
     Returns:
-        float: Custom fraud cost metric = (100*FN + FP) / total_samples.
-        
-    Example:
-        >>> y_true = np.array([0, 1, 1, 0])
-        >>> y_prob = np.array([0.1, 0.9, 0.8, 0.3])
-        >>> cost = eval_function(y_true, y_prob, threshold=0.5)
-        >>> print(f"Fraud cost: {cost:.4f}")
+        float: `(100 * FN + FP) / n_samples`.
     """
     fp = np.sum((y_true == 0) & (y_prob >= threshold))
     fn = np.sum((y_true == 1) & (y_prob < threshold))
     return (100*fn + fp)/len(y_true)
 
 def minimize_eval_metric_with_threshold(model, X, y_true):
+    """Find the best threshold under `eval_function`.
+
+    Args:
+        model: Fitted classifier with `predict_proba` or `predict`.
+        X: Feature matrix for inference.
+        y_true: Ground-truth binary labels.
+
+    Returns:
+        tuple[float, float]: Best threshold and corresponding minimum custom loss.
+    """
     if hasattr(model, "predict_proba"):
         y_prob = model.predict_proba(X)[:, 1]
     else:
@@ -152,41 +153,16 @@ def minimize_eval_metric_with_threshold(model, X, y_true):
     return minProb, minScore
 
 def plot_param_vs_score(df: pd.DataFrame, param_name: str, out_dir: Path, metric_name: str = "score"):
-    """Generate a diagnostic plot showing hyperparameter value vs model performance.
-    
-    Creates a visualization to analyze the relationship between hyperparameter values
-    and model performance metrics. The plot type automatically adapts based on the
-    parameter type:
-    - For categorical/integer/boolean parameters: Bar plot showing mean scores
-    - For continuous parameters: Scatter plot of individual trials
-    
+    """Plot a hyperparameter against an optimization metric.
+
     Args:
-        df: Trial history DataFrame with at least [param_name, metric_name] columns.
-        param_name: Name of the hyperparameter column to visualize.
-        out_dir: Directory where the plot will be saved.
-        metric_name: Name of the metric column in df. Defaults to "score".
-        
+        df: Trial history DataFrame containing parameter and metric columns.
+        param_name: Parameter column to plot.
+        out_dir: Directory where the PNG plot is saved.
+        metric_name: Metric column to plot on the y-axis.
+
     Returns:
-        Path | None: Path to the saved PNG plot file if successful, None if the 
-            parameter column is missing from the DataFrame.
-            
-    Example:
-        >>> history_df = pd.DataFrame({
-        ...     "learning_rate": [0.01, 0.1, 0.3],
-        ...     "score": [0.85, 0.90, 0.87]
-        ... })
-        >>> path = plot_param_vs_score(
-        ...     df=history_df,
-        ...     param_name="learning_rate",
-        ...     out_dir=Path("hyperparameter_plots")
-        ... )
-        >>> print(f"Diagnostic plot saved to: {path}")
-        
-    Note:
-        - Plots are saved as PNG files with 150 DPI resolution
-        - For categorical parameters, values are sorted before plotting
-        - Bar plots include error bars showing score variance
-        - Scatter plots use partial transparency to show point density
+        Path | None: Saved plot path, or `None` if `param_name` is not in `df`.
     """
     if param_name not in df.columns:
         return None
@@ -220,49 +196,21 @@ def plot_param_vs_score(df: pd.DataFrame, param_name: str, out_dir: Path, metric
 # ---------------------------
 def train_xgb_optuna(X, y, n_trials=30, random_state=42,
                      early_stopping_rounds=50, use_gpu=True):
-    """Train an XGBoost classifier with Optuna hyperparameter optimization.
-    
-    Uses Optuna's TPE sampler to optimize hyperparameters targeting PR-AUC score.
-    Features include GPU acceleration (if available), early stopping, and 
-    comprehensive hyperparameter visualization.
-    
+    """Train an XGBoost classifier with Optuna tuning.
+
     Args:
-        X: Training features as pandas DataFrame or numpy array.
-        y: Training labels as pandas Series or numpy array.
-        test_size: Fraction of data to use for test set. Defaults to 0.2.
-        n_trials: Number of Optuna trials for hyperparameter search. Defaults to 30.
-        random_state: Random seed for reproducibility. Defaults to 42.
-        early_stopping_rounds: Number of rounds with no improvement to trigger early
-            stopping. Defaults to 50.
-        use_gpu: Whether to use GPU acceleration if available. Defaults to True.
-        
+        X: Training features.
+        y: Training labels.
+        n_trials: Number of Optuna trials.
+        random_state: Random seed.
+        early_stopping_rounds: Early stopping rounds for fold training.
+        use_gpu: Whether GPU should be used when available.
+
     Returns:
-        tuple: A tuple containing:
-            best_model: Trained XGBoost classifier with best parameters
-            best_params: Dictionary of best hyperparameters found
-            X_va: Validation features
-            y_va: Validation labels
-            hist_df: DataFrame containing trial history with parameters and scores
-            plot_paths: List of Paths to hyperparameter visualization plots
-    
+        tuple: `(best_model, best_params, hist_df, plot_paths)`.
+
     Raises:
-        ValueError: If no successful trials complete or best parameters are missing
-            required keys.
-    
-    Example:
-        >>> from sklearn.datasets import make_classification
-        >>> X, y = make_classification(n_samples=1000, random_state=42)
-        >>> model, params, X_val, y_val, history, plots = train_xgb_optuna(X, y)
-        >>> print(f"Best PR-AUC: {history['score'].max():.4f}")
-    
-    Note:
-        Hyperparameters optimized include:
-        - learning_rate: [0.01, 0.3] log-uniform
-        - max_depth: [8, 15]
-        - subsample: [0.5, 1.0]
-        - colsample_bytree: [0.5, 1.0]
-        - min_child_weight: [1e-3, 1.0] log-uniform
-        - gamma: [0, 5]
+        ValueError: If all Optuna trials fail.
     """
     n = len(X)
     split_idx1 = int(n * 0.8)
@@ -386,30 +334,21 @@ def train_xgb_optuna(X, y, n_trials=30, random_state=42,
 
 def train_catboost_optuna(X, y, n_trials=30, random_state=42,
                           early_stopping_rounds=50, use_gpu=True):
-    """Train a CatBoost classifier with automatic hyperparameter optimization.
-    
-    Uses Optuna's TPE sampler to optimize hyperparameters targeting PR-AUC score.
-    Automatically handles categorical features and includes GPU acceleration support.
-    
+    """Train a CatBoost classifier with Optuna tuning.
+
     Args:
-        X: Training features as pandas DataFrame or numpy array.
-        y: Training labels as pandas Series or numpy array.
-        test_size: Fraction of data to use for test set. Defaults to 0.2.
-        n_trials: Number of Optuna trials for hyperparameter search. Defaults to 30.
-        random_state: Random seed for reproducibility. Defaults to 42.
-        early_stopping_rounds: Number of rounds with no improvement to trigger early
-            stopping. Defaults to 50.
-        use_gpu: Whether to use GPU acceleration if available. Defaults to True.
-        
+        X: Training features.
+        y: Training labels.
+        n_trials: Number of Optuna trials.
+        random_state: Random seed.
+        early_stopping_rounds: Early stopping rounds for fold training.
+        use_gpu: Whether GPU should be used when available.
+
     Returns:
-        tuple: (best_model, best_params, X_va, y_va, hist_df, plot_paths) or
-               (best_model, best_params, X_va, y_va, X_test, y_test, hist_df, plot_paths) if test_size is provided
-            - best_model: Trained CatBoost classifier with best parameters
-            - best_params: Dictionary of best hyperparameters found
-            - X_va: Validation features
-            - y_va: Validation labels
-            - hist_df: DataFrame of hyperparameter trial history
-            - plot_paths: List of Paths to diagnostic plots
+        tuple: `(best_model, best_params, hist_df, plot_paths)`.
+
+    Raises:
+        ValueError: If all Optuna trials fail.
     """
     trial_history = []  # we'll collect params and scores here
     n = len(X)
@@ -538,52 +477,21 @@ def train_catboost_optuna(X, y, n_trials=30, random_state=42,
 
 def train_lgbm_optuna(X, y, n_trials=30, random_state=42,
                       early_stopping_rounds=50, use_gpu=True):
-    """Train a LightGBM classifier with Optuna hyperparameter optimization.
-    
-    Uses Optuna's TPE sampler to optimize hyperparameters targeting PR-AUC score.
-    Features include GPU acceleration support, early stopping, and gradient-based
-    boosting optimizations specific to LightGBM.
-    
+    """Train a LightGBM classifier with Optuna tuning.
+
     Args:
-        X: Training features as pandas DataFrame or numpy array.
-        y: Training labels as pandas Series or numpy array.
-        test_size: Fraction of data to use for test set. Defaults to 0.2.
-        n_trials: Number of Optuna trials for hyperparameter search. Defaults to 30.
-        random_state: Random seed for reproducibility. Defaults to 42.
-        early_stopping_rounds: Number of rounds with no improvement to trigger early
-            stopping. Defaults to 50.
-        use_gpu: Whether to use GPU acceleration if available. Defaults to True.
-        
+        X: Training features.
+        y: Training labels.
+        n_trials: Number of Optuna trials.
+        random_state: Random seed.
+        early_stopping_rounds: Early stopping rounds for fold training.
+        use_gpu: Whether GPU should be used when available.
+
     Returns:
-        tuple: A tuple containing:
-            best_model: Trained LightGBM classifier with best parameters
-            best_params: Dictionary of best hyperparameters found
-            X_va: Validation features
-            y_va: Validation labels
-            hist_df: DataFrame containing trial history with parameters and scores
-            plot_paths: List of Paths to hyperparameter visualization plots
-    
+        tuple: `(best_model, best_params, hist_df, plot_paths)`.
+
     Raises:
-        ValueError: If no successful trials complete or best parameters are missing
-            required keys.
-    
-    Example:
-        >>> from sklearn.datasets import make_classification
-        >>> X, y = make_classification(n_samples=1000, random_state=42)
-        >>> model, params, X_val, y_val, history, plots = train_lgbm_optuna(X, y)
-        >>> print(f"Best PR-AUC: {history['score'].max():.4f}")
-    
-    Note:
-        Hyperparameters optimized include:
-        - num_leaves: [16, 256]
-        - max_depth: [10, 20]
-        - learning_rate: [0.01, 0.3] log-uniform
-        - feature_fraction: [0.6, 1.0]
-        - bagging_fraction: [0.6, 1.0]
-        - bagging_freq: [1, 10]
-        - min_child_samples: [10, 100]
-        - lambda_l1: [1e-8, 10.0] log-uniform
-        - lambda_l2: [1e-8, 10.0] log-uniform
+        ValueError: If all Optuna trials fail.
     """
     trial_history = []  # we'll collect params and scores here
     n = len(X)
@@ -717,59 +625,16 @@ def train_ensemble(
     n_trials: int = 10,
     random_state: int = 42,
 ):
-    """Train an ensemble model by stacking base models with a logistic regression meta-learner.
-    
-    Uses Optuna to optimize a logistic regression model that combines predictions from base models
-    (XGBoost, CatBoost, LightGBM). The meta-learner's hyperparameters are tuned to maximize PR-AUC.
-    
+    """Train a logistic-regression ensemble model with Optuna.
+
     Args:
-        base_models: Dictionary mapping model names to trained base classifiers.
-        X_tr: Training feature DataFrame.
-        y_tr: Training label Series.
-        X_va: Validation feature DataFrame.
-        y_va: Validation label Series.
-        X_test: Test feature DataFrame or None.
-        y_test: Test label Series or None.
-        n_trials: Number of Optuna trials for meta-learner optimization. Defaults to 30.
-        random_state: Random seed for reproducibility. Defaults to 42.
-        
+        X: Training features.
+        y: Training labels.
+        n_trials: Number of Optuna trials for meta-learner tuning.
+        random_state: Random seed.
+
     Returns:
-        If X_test is not None:
-            tuple containing:
-                ensemble: Trained meta-learner model
-                base_models: Dictionary of base models
-                X_meta_val: Meta-features for validation set
-                y_va: Validation labels
-                X_meta_test: Meta-features for test set
-                y_test: Test labels
-                best_params: Meta-learner's best hyperparameters
-                hist_df: DataFrame of optimization trial history
-                plot_paths: List of Paths to hyperparameter plots
-        Else:
-            tuple containing first 7 elements listed above
-            
-    Raises:
-        ValueError: If solver-penalty combination is invalid.
-        
-    Example:
-        >>> ensemble, models, X_val, y_val, params, history, plots = train_ensemble(
-        ...     base_models={"xgb": xgb_model, "lgbm": lgbm_model},
-        ...     X_tr=train_features,
-        ...     y_tr=train_labels,
-        ...     X_va=val_features,
-        ...     y_va=val_labels,
-        ...     X_test=None,
-        ...     y_test=None
-        ... )
-        >>> print(f"Ensemble validation PR-AUC: {average_precision_score(y_val, ensemble.predict_proba(X_val)[:, 1]):.4f}")
-    
-    Note:
-        The meta-learner is optimized for:
-        - Regularization strength (C)
-        - Penalty type (l1, l2, elasticnet)
-        - Solver algorithm
-        - Class weights
-        - L1 ratio (for elasticnet only)
+        tuple: `(ensemble, best_params_log, hist_df, plot_paths)`.
     """
     
     print("[INFO] Generating meta-features...")
