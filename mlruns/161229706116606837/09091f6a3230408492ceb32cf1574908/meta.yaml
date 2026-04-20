@@ -1,0 +1,14 @@
+artifact_uri: file:c:/Developer/MSC-thesis/mlruns/161229706116606837/09091f6a3230408492ceb32cf1574908/artifacts
+end_time: 1769879984829
+entry_point_name: ''
+experiment_id: '161229706116606837'
+lifecycle_stage: active
+run_id: 09091f6a3230408492ceb32cf1574908
+run_name: LGBM_Optuna_Reduced
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1769879919340
+status: 3
+tags: []
+user_id: ppapa

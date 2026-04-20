@@ -1,0 +1,10 @@
+artifact_location: file:c:/Developer/MSC-thesis/mlruns/161229706116606837/models/m-2b8bd8cfee2b42ae8583c6f769982c0d/artifacts
+creation_timestamp: 1769885629460
+experiment_id: '161229706116606837'
+last_updated_timestamp: 1769885649088
+model_id: m-2b8bd8cfee2b42ae8583c6f769982c0d
+model_type: null
+name: model
+source_run_id: fa402be77ca940de8977a568c41c9847
+status: 2
+status_message: null

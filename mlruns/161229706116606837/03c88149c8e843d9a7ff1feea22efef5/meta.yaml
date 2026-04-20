@@ -1,0 +1,14 @@
+artifact_uri: file:c:/Developer/MSC-thesis/mlruns/161229706116606837/03c88149c8e843d9a7ff1feea22efef5/artifacts
+end_time: 1769878229422
+entry_point_name: ''
+experiment_id: '161229706116606837'
+lifecycle_stage: active
+run_id: 03c88149c8e843d9a7ff1feea22efef5
+run_name: XGBoost_Optuna_Reduced_threshold_0.1
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1769878206778
+status: 3
+tags: []
+user_id: ppapa

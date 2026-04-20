@@ -1,0 +1,22 @@
+artifact_path: file:c:/Developer/MSC-thesis/mlruns/161229706116606837/models/m-e3274a89373f47338c8022028575892f/artifacts
+flavors:
+  catboost:
+    catboost_version: 1.2.8
+    code: null
+    data: model.cb
+    model_type: CatBoostClassifier
+    save_format: cbm
+  python_function:
+    data: model.cb
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.catboost
+    python_version: 3.12.9
+mlflow_version: 3.5.0
+model_id: m-e3274a89373f47338c8022028575892f
+model_size_bytes: 5150592
+model_uuid: m-e3274a89373f47338c8022028575892f
+prompts: null
+run_id: 8ba224c3c43f44de89b195cb194b598a
+utc_time_created: '2026-01-31 16:18:32.303431'

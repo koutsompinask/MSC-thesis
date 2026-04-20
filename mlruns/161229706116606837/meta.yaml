@@ -1,0 +1,6 @@
+artifact_location: file:c:/Developer/MSC-thesis/mlruns/161229706116606837
+creation_time: 1769862719652
+experiment_id: '161229706116606837'
+last_update_time: 1769862719652
+lifecycle_stage: active
+name: Fraud-detection-custom-thresholds_v12_downsample_auc_pr

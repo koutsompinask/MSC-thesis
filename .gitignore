@@ -3,7 +3,7 @@
 /ai-gen
 *.pyc
 mlruns/*
-!mlruns/698334952155700210
+!mlruns/161229706116606837
 *txt
 !requirements.txt
 hp_search_artifacts
