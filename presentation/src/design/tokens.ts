@@ -1,0 +1,25 @@
+export const C = {
+  navyDark:   '#0A1628',
+  navy:       '#0D2137',
+  navyMid:    '#1A3A5C',
+  teal:       '#0891B2',
+  tealBright: '#06B6D4',
+  tealPale:   '#DBEAFE',
+  bgPage:     '#EEF4FB',
+  bgCard:     '#FFFFFF',
+  bgCardAlt:  '#F1F7FF',
+  textDark:   '#1E293B',
+  textMid:    '#475569',
+  textMuted:  '#94A3B8',
+  amber:      '#D97706',
+  amberPale:  '#FEF3C7',
+  green:      '#059669',
+  greenPale:  '#D1FAE5',
+  red:        '#DC2626',
+  redPale:    '#FEE2E2',
+  purple:     '#7C3AED',
+  purplePale: '#EDE9FE',
+  white:      '#FFFFFF',
+} as const
+
+export type ColorKey = keyof typeof C
