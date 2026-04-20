@@ -1,0 +1,16 @@
+fastapi==0.119.0
+uvicorn==0.37.0
+python-multipart==0.0.20
+pydantic==2.12.2
+python-dotenv==1.1.1
+
+# ML core
+numpy==2.2.5
+pandas==2.2.3
+scikit-learn==1.6.1
+lightgbm==4.6.0
+shap==0.49.1
+
+# MLflow (for pyfunc model loading)
+mlflow==3.5.0
+mlflow-skinny==3.5.0

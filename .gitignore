@@ -6,6 +6,7 @@ mlruns/*
 !mlruns/161229706116606837
 *txt
 !requirements.txt
+!requirements-api.txt
 hp_search_artifacts
 hp_search_plots
 catboost_info
