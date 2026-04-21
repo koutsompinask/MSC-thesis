@@ -24,7 +24,7 @@ export function PipelineViz() {
 
   return (
     <div className="flex flex-col gap-0 h-full justify-center">
-      <div className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: C.textMuted }}>
+      <div className="text-sm font-bold uppercase tracking-widest mb-4" style={{ color: C.textMuted }}>
         Pipeline
       </div>
       {stages.map(({ id, label, sub }, i) => {
@@ -37,7 +37,7 @@ export function PipelineViz() {
           <div key={id} className="flex flex-col">
             {/* Connector line */}
             {i > 0 && (
-              <div className="ml-3.5 w-0.5 h-4 overflow-hidden" style={{ background: '#1A3A5C' }}>
+              <div className="ml-5 w-0.5 h-4 overflow-hidden" style={{ background: '#1A3A5C' }}>
                 <motion.div
                   className="w-full h-full"
                   style={{ background: C.teal }}
@@ -49,7 +49,7 @@ export function PipelineViz() {
 
             {/* Stage row */}
             <motion.div
-              className="flex items-center gap-2.5"
+              className="flex items-center gap-3"
               animate={
                 isActive
                   ? { scale: 1.03, transition: { type: 'spring', stiffness: 300, damping: 20 } }
@@ -58,7 +58,7 @@ export function PipelineViz() {
             >
               {/* Circle */}
               <motion.div
-                className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-xs"
+                className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-sm"
                 animate={{
                   background: isComplete ? C.green : isActive ? C.teal : '#1A3A5C',
                   color: isIdle ? '#475569' : '#FFFFFF',
@@ -70,7 +70,7 @@ export function PipelineViz() {
 
               {/* Label */}
               <div>
-                <div className="text-xs font-semibold leading-tight"
+                <div className="text-sm font-semibold leading-tight"
                   style={{ color: isIdle ? C.textMuted : C.white }}>
                   {label}
                 </div>

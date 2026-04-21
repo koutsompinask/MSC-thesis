@@ -4,7 +4,8 @@ Requires: X_test, y_test, and the LightGBM model loaded in memory (run training.
 OR run this standalone if the processed test CSV exists.
 
 Usage (standalone):
-  cd /mnt/d/Developer/MSC-thesis
+  cd /home/kkout/Workspaces/MSC-thesis
+  source .venv/bin/activate
   python fastapi/generate_examples.py
 """
 import json
@@ -12,6 +13,7 @@ import pickle
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from model_input import json_safe_value, prepare_lightgbm_input
 
 ROOT = Path(__file__).parent.parent
 MODEL_PATH = ROOT / "mlruns/161229706116606837/models/m-85ab0e322208453d847c06d654120b9e/artifacts/model.pkl"
@@ -34,11 +36,27 @@ API_FIELDS = [
     "id_02","R_emaildomain","addr1","V_PCA_8","DeviceType","uid_C7_std","id_07",
 ]
 
-THRESHOLD = 0.041898332815971794
+DEMO_ANCHORS = {
+    "clear_legit": ("Low probability", 0.0),
+    "borderline": ("Mid probability", 0.5),
+    "clear_fraud": ("High probability", 1.0),
+}
 
 print("Loading model...")
 with open(MODEL_PATH, "rb") as f:
     model = pickle.load(f)
+
+def csv_columns(path: Path) -> list[str]:
+    return pd.read_csv(path, nrows=0).columns.tolist()
+
+def needed_columns(path: Path) -> list[str]:
+    columns = set(csv_columns(path))
+    wanted = set(model.feature_name_) | set(API_FIELDS)
+    return [column for column in csv_columns(path) if column in wanted and column in columns]
+
+def count_csv_rows(path: Path) -> int:
+    with open(path) as f:
+        return sum(1 for _ in f) - 1
 
 # Try to load processed test data
 test_csv = ROOT / "ieee-fraud-detection-data/processed/test_processed.csv"
@@ -50,57 +68,46 @@ if not test_csv.exists():
         print("Run EDA_and_preprocessing.ipynb first, then re-run this script.")
         exit(1)
     print(f"Loading from {train_csv}...")
-    df = pd.read_csv(train_csv)
-    n = len(df)
-    df = df.iloc[int(n * 0.81):]  # last 19% = test split
+    n = count_csv_rows(train_csv)
+    start = int(n * 0.81)
+    df = pd.read_csv(train_csv, usecols=needed_columns(train_csv), skiprows=range(1, start + 1))
 else:
     print(f"Loading from {test_csv}...")
-    df = pd.read_csv(test_csv)
+    df = pd.read_csv(test_csv, usecols=needed_columns(test_csv))
 
 print(f"Test set: {len(df)} rows")
 
-# Separate features and target
-y = df["isFraud"].values if "isFraud" in df.columns else None
 available_fields = [f for f in API_FIELDS if f in df.columns]
 X = df[available_fields].copy()
 
 print(f"Running inference on {len(X)} rows ({len(available_fields)}/{len(API_FIELDS)} API fields available)...")
-# Reindex to all 215 model features (fills missing with NaN)
-feature_columns = model.feature_name_
-X_full = X.reindex(columns=feature_columns, fill_value=np.nan)
+X_full = prepare_lightgbm_input(model, X)
 
 probs = model.predict_proba(X_full)[:, 1]
-y_pred = (probs >= THRESHOLD).astype(int)
 
 def row_to_dict(idx: int) -> dict:
     row = X.iloc[idx]
-    return {k: (None if pd.isna(v) else float(v)) for k, v in row.items()}
+    return {k: json_safe_value(v) for k, v in row.items()}
 
 cases: dict = {}
+used_indices: set[int] = set()
 
-if y is not None:
-    tp_mask = (y == 1) & (y_pred == 1)
-    tn_mask = (y == 0) & (y_pred == 0)
-else:
-    tp_mask = y_pred == 1
-    tn_mask = y_pred == 0
+def keep_case(name: str, idx: int, label: str) -> None:
+    cases[name] = row_to_dict(idx)
+    used_indices.add(idx)
+    print(f"{label}: idx={idx}, prob={probs[idx]:.4f}")
 
-# Clear fraud: highest probability TP
-if tp_mask.any():
-    idx = int(np.where(tp_mask)[0][np.argmax(probs[tp_mask])])
-    cases["clear_fraud"] = row_to_dict(idx)
-    print(f"Clear fraud: idx={idx}, prob={probs[idx]:.4f}")
+def closest_to_anchor(anchor: float, exclude: set[int]) -> int:
+    order = np.argsort(np.abs(probs - anchor))
+    for candidate in order:
+        idx = int(candidate)
+        if idx not in exclude:
+            return idx
+    return int(order[0])
 
-# Clear legit: lowest probability TN
-if tn_mask.any():
-    idx = int(np.where(tn_mask)[0][np.argmin(probs[tn_mask])])
-    cases["clear_legit"] = row_to_dict(idx)
-    print(f"Clear legit: idx={idx}, prob={probs[idx]:.4f}")
-
-# Borderline: closest to threshold
-idx = int(np.argmin(np.abs(probs - THRESHOLD)))
-cases["borderline"] = row_to_dict(idx)
-print(f"Borderline: idx={idx}, prob={probs[idx]:.4f}")
+for name, (label, anchor) in DEMO_ANCHORS.items():
+    idx = closest_to_anchor(anchor, used_indices)
+    keep_case(name, idx, label)
 
 with open(OUTPUT, "w") as f:
     json.dump(cases, f, indent=2)

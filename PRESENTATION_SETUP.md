@@ -6,7 +6,8 @@ A two-part system: a React slide deck (port 5173) + a FastAPI backend (port 8000
 
 ## Prerequisites
 
-- Python 3.13+ (via pyenv — already installed)
+- Python 3.10+ (`python3` must be available)
+- `uv` for Python environment/dependency management
 - Node.js 18+ with npm
 
 ---
@@ -15,11 +16,20 @@ A two-part system: a React slide deck (port 5173) + a FastAPI backend (port 8000
 
 ### 1. Create the Python virtual environment
 
+Run these commands from the repository root:
+
 ```bash
-python3 -m venv /mnt/d/Developer/MSC-thesis/.venv
-source /mnt/d/Developer/MSC-thesis/.venv/bin/activate
-pip install --upgrade pip
-pip install -r /mnt/d/Developer/MSC-thesis/fastapi/requirements-api.txt
+cd /home/kkout/Workspaces/MSC-thesis
+uv venv --python python3 .venv
+uv pip install --python .venv/bin/python -r fastapi/requirements-api.txt
+source .venv/bin/activate
+```
+
+Verify that dependencies are installed in the project venv, not in the user/global Python:
+
+```bash
+which python
+python -c "import sys, numpy, pandas, lightgbm; print(sys.executable); print(numpy.__version__)"
 ```
 
 ### 2. Generate example transactions (requires the venv above)
@@ -27,7 +37,7 @@ pip install -r /mnt/d/Developer/MSC-thesis/fastapi/requirements-api.txt
 This creates `fastapi/examples.json` — 3 real transactions used in the live demo.
 
 ```bash
-cd /mnt/d/Developer/MSC-thesis
+cd /home/kkout/Workspaces/MSC-thesis
 source .venv/bin/activate
 python fastapi/generate_examples.py
 ```
@@ -35,10 +45,10 @@ python fastapi/generate_examples.py
 Expected output:
 ```
 Loading model...
-Loading from ieee-fraud-detection-data/processed/train_processed.csv...
-Clear fraud:  prob=0.9xxx
-Clear legit:  prob=0.0xxx
-Borderline:   prob=0.04xx
+Loading from ieee-fraud-detection-data/processed/test_processed.csv...
+Low probability:  prob=0.0xxx
+Mid probability:  prob=0.5xxx
+High probability: prob=0.9xxx
 ✅ examples.json written to fastapi/examples.json
 ```
 
@@ -47,7 +57,7 @@ Borderline:   prob=0.04xx
 ### 3. Install frontend dependencies
 
 ```bash
-cd /mnt/d/Developer/MSC-thesis/presentation
+cd /home/kkout/Workspaces/MSC-thesis/presentation
 npm install
 ```
 
@@ -60,7 +70,7 @@ Open **two terminals**.
 ### Terminal 1 — FastAPI backend
 
 ```bash
-cd /mnt/d/Developer/MSC-thesis
+cd /home/kkout/Workspaces/MSC-thesis
 source .venv/bin/activate
 cd fastapi
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -77,7 +87,7 @@ INFO: Uvicorn running on http://0.0.0.0:8000
 ### Terminal 2 — React slide deck
 
 ```bash
-cd /mnt/d/Developer/MSC-thesis/presentation
+cd /home/kkout/Workspaces/MSC-thesis/presentation
 npm run dev
 ```
 
@@ -132,7 +142,7 @@ Then open: **http://localhost:5173**
 5. Click **Try Another Transaction →** to reset
 
 > The demo shows raw fraud probability (0–100%) and which features drove the score up or down.
-> No binary FRAUD/LEGIT label — threshold selection is a key thesis contribution.
+> No binary FRAUD/LEGIT label and no decision threshold are used in the live demo.
 
 ---
 
@@ -141,8 +151,41 @@ Then open: **http://localhost:5173**
 **Backend won't start — model not found**
 Verify the model artifact exists:
 ```bash
-ls /mnt/d/Developer/MSC-thesis/mlruns/161229706116606837/models/m-85ab0e322208453d847c06d654120b9e/artifacts/model.pkl
+ls /home/kkout/Workspaces/MSC-thesis/mlruns/161229706116606837/models/m-85ab0e322208453d847c06d654120b9e/artifacts/model.pkl
 ```
+
+**`ModuleNotFoundError: No module named 'numpy'`**
+This means the command is running with a Python environment that does not have the API dependencies installed. A common failure mode is installing NumPy into the user/global Python while the activated `.venv` has `include-system-site-packages = false`, so the venv cannot see it.
+
+Check the interpreter and NumPy location:
+```bash
+cd /home/kkout/Workspaces/MSC-thesis
+source .venv/bin/activate
+which python
+python -c "import sys, numpy; print(sys.executable); print(numpy.__file__)"
+```
+
+If the import fails, install the API dependencies into `.venv`:
+```bash
+cd /home/kkout/Workspaces/MSC-thesis
+uv pip install --python .venv/bin/python -r fastapi/requirements-api.txt
+```
+
+**`ValueError: train and valid dataset categorical_feature do not match`**
+This means the dataframe passed to LightGBM does not preserve the categorical column metadata used during training. The saved model expects these columns as pandas `category`, not plain object/string columns:
+
+```text
+DeviceInfo, P_emaildomain, card6, R_emaildomain, id_31, M4, M5, P_emaildomain_1,
+M6, id_30, id_33, ProductCD, R_emaildomain_1, M3, M9, card4
+```
+
+The generator and API call `prepare_lightgbm_input(...)` before inference to restore the model feature order and categorical dtypes. If this error returns, verify that inference still goes through that helper before calling `predict_proba` or SHAP.
+
+**API returns `422` with missing feature names**
+The live demo sends a partial feature dictionary. This is expected: the backend reindexes the request to the 215 reduced-model features and fills absent columns with `NaN`. The `/predict_explain` endpoint should accept `dict[str, Any]`, not a strict request model with every demo field required.
+
+**`examples.json` examples are not low/mid/high probability**
+The generator should select examples by raw probability anchors only: closest to `0.0`, closest to `0.5`, and closest to `1.0`. It should not use the thesis threshold or labels for live-demo example selection.
 
 **Demo shows "Failed to fetch" error**
 - Confirm the FastAPI backend is running on port 8000
@@ -175,6 +218,6 @@ All endpoints require header: `X-API-Key: c1c58f5a-8f7c-4bdb-9d78-1c3b12c9f3f2`
 
 - **Model**: LightGBM (`LGBM_Optuna_Reduced`)
 - **ROC-AUC**: 0.9191 | **PR-AUC**: 0.5737
-- **Cost-optimal threshold**: 0.0419 → Recall 92.7%, Precision 8.9%
+- **Live demo output**: raw fraud probability only; example cards are selected near 0%, 50%, and 100%
 - **Input**: 81 engineered features (reindexed to 215 training features; missing → NaN)
 - **Artifacts**: `mlruns/161229706116606837/models/m-85ab0e322208453d847c06d654120b9e/artifacts/`

@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import { useState, useEffect } from 'react'
 import { useDemoStore } from '../store/useDemoStore'
-import type { ExampleKey } from '../store/useDemoStore'
+import type { ExampleKey, FeatureValue } from '../store/useDemoStore'
 import { fetchExamples } from './api'
 import type { ExampleData } from './api'
 import { C } from '../design/tokens'
@@ -9,19 +9,19 @@ import { C } from '../design/tokens'
 const CARD_CONFIGS: Record<ExampleKey, { label: string; desc: string; accent: string; icon: string }> = {
   clear_fraud: {
     label: 'High Risk',
-    desc: 'High-value transaction with unusual behavioral pattern',
+    desc: 'Example selected near 100% model probability',
     accent: C.amber,
     icon: '⚠',
   },
   clear_legit: {
     label: 'Low Risk',
-    desc: 'Routine purchase matching user behavioral baseline',
+    desc: 'Example selected near 0% model probability',
     accent: C.teal,
     icon: '✓',
   },
   borderline: {
-    label: 'Borderline',
-    desc: 'Slightly elevated amount, partial signal mismatch',
+    label: 'Mid Risk',
+    desc: 'Example selected near 50% model probability',
     accent: C.purple,
     icon: '~',
   },
@@ -42,18 +42,18 @@ export function TransactionCards() {
   const isDone = stage === 'done'
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="text-xs font-bold uppercase tracking-widest" style={{ color: C.textMuted }}>
+    <div className="flex flex-col gap-4">
+      <div className="text-sm font-bold uppercase tracking-widest" style={{ color: C.textMuted }}>
         Select a Transaction
       </div>
 
       {loadError && (
-        <div className="text-xs p-2 rounded" style={{ background: '#FEE2E2', color: C.red }}>
+        <div className="text-sm p-3 rounded" style={{ background: '#FEE2E2', color: C.red }}>
           Could not load examples: {loadError}
         </div>
       )}
 
-      <div className="flex gap-2.5">
+      <div className="flex gap-3">
         {(Object.keys(CARD_CONFIGS) as ExampleKey[]).map((key, i) => {
           const { label, desc, accent, icon } = CARD_CONFIGS[key]
           const isSelected = selectedExample === key
@@ -63,27 +63,27 @@ export function TransactionCards() {
               key={key}
               disabled={isRunning}
               onClick={() => selectExample(key)}
-              className="flex-1 rounded-lg p-3 text-left transition-all cursor-pointer disabled:cursor-not-allowed"
+              className="flex-1 rounded-lg p-4 text-left transition-all cursor-pointer disabled:cursor-not-allowed"
               style={{
                 background: isSelected ? `${accent}18` : C.navyMid,
                 border: `1.5px solid ${isSelected ? accent : '#1A3A5C'}`,
+                minHeight: '96px',
               }}
               whileHover={!isRunning ? { scale: 1.02 } : {}}
-              animate={isSelected ? { scale: 1.03 } : { scale: 1 }}
+              animate={isSelected ? { opacity: 1, y: 0, scale: 1.03 } : { opacity: 1, y: 0, scale: 1 }}
               initial={{ opacity: 0, y: 8 }}
               transition={{ delay: i * 0.07 }}
-              // @ts-ignore framer-motion animate conflicts with initial
             >
-              <div className="flex items-center gap-1.5 mb-1">
+              <div className="flex items-center gap-2 mb-2">
                 <div
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
                   style={{ background: accent, color: C.white }}
                 >
                   {icon}
                 </div>
-                <span className="font-bold text-xs" style={{ color: isSelected ? accent : C.white }}>{label}</span>
+                <span className="font-bold text-base" style={{ color: isSelected ? accent : C.white }}>{label}</span>
               </div>
-              <div className="text-xs leading-snug" style={{ color: C.textMuted, fontSize: '10px' }}>{desc}</div>
+              <div className="text-sm leading-snug" style={{ color: C.textMuted }}>{desc}</div>
             </motion.button>
           )
         })}
@@ -92,9 +92,9 @@ export function TransactionCards() {
       {/* Run button */}
       {selectedExample && !isRunning && !isDone && examples && (
         <motion.button
-          className="w-full py-2 rounded text-sm font-bold text-white"
+          className="w-full py-3 rounded text-base font-bold text-white"
           style={{ background: C.teal }}
-          onClick={() => runInference(examples[selectedExample] as Record<string, number | null>)}
+          onClick={() => runInference(examples[selectedExample] as Record<string, FeatureValue>)}
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           whileHover={{ scale: 1.02 }}
@@ -106,7 +106,7 @@ export function TransactionCards() {
 
       {isRunning && (
         <motion.div
-          className="w-full py-2 rounded text-xs text-center font-medium"
+          className="w-full py-3 rounded text-sm text-center font-medium"
           style={{ background: C.navyMid, color: C.tealBright, border: `1px solid ${C.teal}` }}
           animate={{ opacity: [1, 0.6, 1] }}
           transition={{ repeat: Infinity, duration: 1.5 }}

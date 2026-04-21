@@ -14,6 +14,11 @@ export function ShapWaterfall({ shapValues, baseValue }: Props) {
   if (!shapValues.length) return null
 
   const maxAbs = Math.max(...shapValues.map((s) => Math.abs(s.shap)))
+  const formatFeatureValue = (value: ShapEntry['value']) => {
+    if (typeof value === 'number') return value.toFixed(3)
+    if (value == null || value === '') return 'missing'
+    return String(value)
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -79,7 +84,7 @@ export function ShapWaterfall({ shapValues, baseValue }: Props) {
                   initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
                 >
                   <div className="font-bold" style={{ color: barColor }}>{entry.feature}</div>
-                  <div style={{ color: C.textMuted }}>value: {entry.value != null ? entry.value.toFixed(3) : 'missing'}</div>
+                  <div style={{ color: C.textMuted }}>value: {formatFeatureValue(entry.value)}</div>
                   <div>SHAP: <span style={{ color: barColor }}>{entry.shap > 0 ? '+' : ''}{entry.shap.toFixed(4)}</span></div>
                 </motion.div>
               )}

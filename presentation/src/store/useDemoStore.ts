@@ -12,10 +12,11 @@ export type DemoStage =
   | 'done'
 
 export type ExampleKey = 'clear_fraud' | 'clear_legit' | 'borderline'
+export type FeatureValue = number | string | null
 
 export interface ShapEntry {
   feature: string
-  value: number | null
+  value: FeatureValue
   shap: number
   direction: 'positive' | 'negative'
 }
@@ -36,7 +37,7 @@ interface DemoStore {
   isLoading: boolean
   error: string | null
   selectExample: (key: ExampleKey) => void
-  runInference: (features: Record<string, number | null>) => Promise<void>
+  runInference: (features: Record<string, FeatureValue>) => Promise<void>
   reset: () => void
 }
 
@@ -53,7 +54,7 @@ export const useDemoStore = create<DemoStore>()((set) => ({
   selectExample: (key: ExampleKey) =>
     set({ selectedExample: key, stage: 'selected', result: null, error: null }),
 
-  runInference: async (features: Record<string, number | null>) => {
+  runInference: async (features: Record<string, FeatureValue>) => {
     set({ isLoading: true, error: null, stage: 'stage1' })
 
     // Lazy import to avoid circular deps

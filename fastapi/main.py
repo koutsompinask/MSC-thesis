@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader
 from fastapi import Security, HTTPException
 from pathlib import Path
+from typing import Any
 import json
 import pickle
 import numpy as np
@@ -11,7 +12,7 @@ import shap
 import mlflow.pyfunc
 
 from config import API_KEY, API_KEY_NAME
-from model import PredictionRequest
+from model_input import json_safe_value, prepare_lightgbm_input
 
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
@@ -40,7 +41,6 @@ print("All models ready!")
 # Metrics from the best run
 MODEL_ROC_AUC = 0.9191
 MODEL_PR_AUC  = 0.5737
-THRESHOLD     = 0.041898332815971794
 
 EXAMPLES_PATH = Path(__file__).parent / "examples.json"
 
@@ -65,17 +65,15 @@ app.add_middleware(
 # ------------------------------------
 
 @app.post("/predict")
-def predict(data: PredictionRequest, api_key: str = Depends(authenticate)):
-    input_dict = data.model_dump()
-    full_df = pd.DataFrame([input_dict]).reindex(columns=FEATURE_COLUMNS, fill_value=np.nan)
+def predict(data: dict[str, Any], api_key: str = Depends(authenticate)):
+    full_df = prepare_lightgbm_input(lgbm_native, pd.DataFrame([data]))
     prediction = ml_model.predict(full_df)
     return {"prediction": int(prediction[0])}
 
 
 @app.post("/predict_explain")
-def predict_explain(data: PredictionRequest, api_key: str = Depends(authenticate)):
-    input_dict = data.model_dump()
-    full_df = pd.DataFrame([input_dict]).reindex(columns=FEATURE_COLUMNS, fill_value=np.nan)
+def predict_explain(data: dict[str, Any], api_key: str = Depends(authenticate)):
+    full_df = prepare_lightgbm_input(lgbm_native, pd.DataFrame([data]))
 
     # Fraud probability
     prob = float(lgbm_native.predict_proba(full_df)[:, 1][0])
@@ -103,7 +101,7 @@ def predict_explain(data: PredictionRequest, api_key: str = Depends(authenticate
     shap_out = [
         {
             "feature": feat,
-            "value": None if (isinstance(val, float) and np.isnan(val)) else float(val),
+            "value": json_safe_value(val),
             "shap": float(s),
             "direction": "positive" if s > 0 else "negative",
         }

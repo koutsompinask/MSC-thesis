@@ -41,24 +41,24 @@ export function LightSlide({ title, num, children, accent = C.teal }: LightSlide
 
       {/* Header band */}
       <div
-        className="flex items-center justify-between px-8 py-3"
-        style={{ background: C.navyDark, minHeight: '52px' }}
+        className="flex items-center justify-between px-9 py-4"
+        style={{ background: C.navyDark, minHeight: '64px' }}
       >
         <h2
-          className="font-bold tracking-wide uppercase text-sm"
+          className="font-bold tracking-wide uppercase text-base"
           style={{ color: C.tealBright, letterSpacing: '0.08em' }}
         >
           {title}
         </h2>
         {num != null && (
-          <span className="text-xs font-medium" style={{ color: C.textMuted }}>
+          <span className="text-sm font-medium" style={{ color: C.textMuted }}>
             {num}
           </span>
         )}
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden p-6">
+      <div className="flex-1 overflow-hidden p-7">
         {children}
       </div>
     </motion.div>

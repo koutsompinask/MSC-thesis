@@ -63,7 +63,7 @@ export function ProbabilityGauge({ probability }: Props) {
       </motion.div>
 
       <div className="text-xs text-center" style={{ color: C.textMuted, maxWidth: '140px', lineHeight: 1.4 }}>
-        Raw model score — threshold selection determines classification
+        Raw model score from 0% to 100%
       </div>
     </div>
   )

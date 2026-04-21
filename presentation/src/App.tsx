@@ -51,8 +51,8 @@ export default function App() {
       if (!containerRef.current || !scaleRef.current) return
       const vw = containerRef.current.clientWidth
       const vh = containerRef.current.clientHeight
-      const slideW = 1280
-      const slideH = 720
+      const slideW = 1152
+      const slideH = 648
       const scale = Math.min(vw / slideW, vh / slideH)
       scaleRef.current.style.transform = `scale(${scale})`
       scaleRef.current.style.width = `${slideW}px`

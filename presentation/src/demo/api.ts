@@ -1,8 +1,8 @@
-import type { InferenceResult } from '../store/useDemoStore'
+import type { FeatureValue, InferenceResult } from '../store/useDemoStore'
 
 const API_KEY = 'c1c58f5a-8f7c-4bdb-9d78-1c3b12c9f3f2'
 
-export async function predictExplain(features: Record<string, number | null>): Promise<InferenceResult> {
+export async function predictExplain(features: Record<string, FeatureValue>): Promise<InferenceResult> {
   const res = await fetch('/api/predict_explain', {
     method: 'POST',
     headers: {
@@ -19,9 +19,9 @@ export async function predictExplain(features: Record<string, number | null>): P
 }
 
 export interface ExampleData {
-  clear_fraud: Record<string, number | null>
-  clear_legit: Record<string, number | null>
-  borderline: Record<string, number | null>
+  clear_fraud: Record<string, FeatureValue>
+  clear_legit: Record<string, FeatureValue>
+  borderline: Record<string, FeatureValue>
 }
 
 export async function fetchExamples(): Promise<ExampleData> {

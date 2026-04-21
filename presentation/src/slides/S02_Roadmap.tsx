@@ -15,27 +15,30 @@ const sections = [
 export function S02_Roadmap() {
   return (
     <DarkSlide>
-      <div className="w-full h-full flex flex-col px-8 py-6">
-        <div className="text-center mb-5">
-          <div className="text-xs font-bold tracking-widest uppercase mb-1" style={{ color: C.teal }}>Presentation Roadmap</div>
-          <div className="text-2xl font-bold text-white">What We'll Cover Today</div>
+      <div className="w-full h-full flex flex-col px-10 py-8">
+        <div className="text-center mb-8">
+          <div className="text-sm font-bold tracking-widest uppercase mb-2" style={{ color: C.teal }}>Presentation Roadmap</div>
+          <div className="text-4xl font-bold text-white">What We'll Cover Today</div>
         </div>
 
-        <div className="flex-1 grid grid-cols-2 gap-x-5 gap-y-2.5 content-start">
+        <div
+          className="flex-1 grid grid-cols-2 gap-4"
+          style={{ gridTemplateRows: 'repeat(4, minmax(0, 1fr))' }}
+        >
           {sections.map(([num, title, desc], i) => (
             <motion.div
               key={num}
-              className="flex overflow-hidden rounded"
+              className="flex overflow-hidden rounded h-full"
               style={{ background: C.navy, border: `1px solid ${C.navyMid}` }}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0, transition: { delay: i * 0.07, duration: 0.35 } }}
             >
-              <div className="w-10 flex-shrink-0 flex items-center justify-center font-bold text-sm text-white" style={{ background: C.teal }}>
+              <div className="w-16 flex-shrink-0 flex items-center justify-center font-black text-xl text-white" style={{ background: C.teal }}>
                 {num}
               </div>
-              <div className="flex-1 py-2 px-3">
-                <div className="font-bold text-xs text-white leading-tight">{title}</div>
-                <div className="text-xs mt-0.5 leading-tight" style={{ color: C.textMuted }}>{desc}</div>
+              <div className="flex-1 py-4 px-5 flex flex-col justify-center">
+                <div className="font-bold text-lg text-white leading-tight">{title}</div>
+                <div className="text-base mt-1 leading-snug" style={{ color: C.textMuted }}>{desc}</div>
               </div>
             </motion.div>
           ))}
