@@ -21,7 +21,7 @@ export function AccentCard({ accent = C.teal, children, className = '', title }:
       <div className="w-1.5 flex-shrink-0" style={{ background: accent }} />
       <div className="flex-1 p-4">
         {title && (
-          <div className="font-semibold text-sm mb-1.5" style={{ color: C.textDark }}>
+          <div className="font-semibold text-base mb-1.5 leading-snug" style={{ color: C.textDark }}>
             {title}
           </div>
         )}

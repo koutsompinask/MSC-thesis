@@ -15,7 +15,7 @@ export function S17_ChampionScorecard() {
     <DarkSlide>
       <div className="w-full h-full flex flex-col px-10 py-6">
         <div className="text-center mb-5">
-          <div className="text-xs font-bold tracking-widest uppercase mb-1" style={{ color: C.teal }}>Champion Scorecard</div>
+          <div className="text-sm font-bold tracking-widest uppercase mb-1" style={{ color: C.teal }}>Champion Scorecard</div>
           <div className="text-2xl font-bold text-white">ROC-AUC Across All Configurations</div>
         </div>
 
@@ -62,7 +62,7 @@ export function S17_ChampionScorecard() {
           ))}
         </motion.div>
 
-        <motion.div className="mt-4 rounded px-4 py-2.5 text-xs" style={{ background: C.navyMid, border: `1px solid ${C.teal}`, color: C.tealBright }}
+        <motion.div className="mt-4 rounded px-4 py-2.5 text-sm leading-relaxed" style={{ background: C.navyMid, border: `1px solid ${C.teal}`, color: C.tealBright }}
           initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { delay: 0.5 } }}>
           LightGBM provides the most stable and dominant discriminatory performance across all configurations. Notably, feature reduction (Config 3) slightly improves LightGBM to 0.919.
         </motion.div>

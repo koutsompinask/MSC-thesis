@@ -25,13 +25,13 @@ export function S19_Conclusions() {
         <motion.div className="flex-1 rounded overflow-hidden"
           style={{ background: C.bgCard, border: '1px solid #e2e8f0' }}
           initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }}>
-          <div className="px-4 py-2.5 font-bold text-sm text-white" style={{ background: C.navyDark }}>KEY CONCLUSIONS</div>
+          <div className="px-4 py-2.5 font-bold text-base text-white" style={{ background: C.navyDark }}>KEY CONCLUSIONS</div>
           <div className="px-4 py-3 flex flex-col gap-3">
             {conclusions.map(({ n, text }, i) => (
               <motion.div key={n} className="flex items-start gap-3"
                 initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0, transition: { delay: 0.1 + i * 0.1 } }}>
                 <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-sm text-white" style={{ background: C.teal }}>{n}</div>
-                <div className="text-xs leading-relaxed pt-0.5" style={{ color: C.textMid }}>{text}</div>
+                <div className="text-sm leading-relaxed pt-0.5" style={{ color: C.textMid }}>{text}</div>
               </motion.div>
             ))}
           </div>
@@ -41,12 +41,12 @@ export function S19_Conclusions() {
         <motion.div className="w-56 rounded overflow-hidden"
           style={{ background: C.bgCard, border: '1px solid #e2e8f0' }}
           initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0, transition: { delay: 0.15 } }}>
-          <div className="px-4 py-2.5 font-bold text-sm text-white" style={{ background: C.navyDark }}>FUTURE RESEARCH</div>
+          <div className="px-4 py-2.5 font-bold text-base text-white" style={{ background: C.navyDark }}>FUTURE RESEARCH</div>
           <div className="px-3 py-3 flex flex-col gap-2">
             {future.map(({ color, title, desc }, i) => (
               <motion.div key={title} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0, transition: { delay: 0.2 + i * 0.09 } }}>
                 <AccentCard accent={color} title={title}>
-                  <div className="text-xs" style={{ color: C.textMid }}>{desc}</div>
+                  <div className="text-sm leading-relaxed" style={{ color: C.textMid }}>{desc}</div>
                 </AccentCard>
               </motion.div>
             ))}

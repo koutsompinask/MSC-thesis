@@ -18,7 +18,7 @@ export function S11_SHAP() {
       <div className="flex gap-5 h-full">
         {/* Left: feature bars */}
         <div className="flex-1 rounded overflow-hidden" style={{ background: C.bgCard, border: '1px solid #e2e8f0' }}>
-          <div className="px-3 py-2.5 font-bold text-sm text-white" style={{ background: C.navyDark }}>
+          <div className="px-3 py-2.5 font-bold text-base text-white" style={{ background: C.navyDark }}>
             Top Predictors by SHAP Importance (Cross-Model)
           </div>
           <div className="px-3 py-2.5 flex flex-col gap-2">
@@ -32,7 +32,7 @@ export function S11_SHAP() {
                     initial={{ width: 0 }}
                     animate={{ width: `${val * 100}%`, transition: { delay: 0.2 + i * 0.07, duration: 0.5, ease: 'easeOut' } }}
                   >
-                    <span className="text-white font-bold text-xs truncate">{name}</span>
+                    <span className="text-white font-bold text-sm truncate">{name}</span>
                   </motion.div>
                 </div>
                 <div className="text-xs font-bold w-8 text-right flex-shrink-0" style={{ color: C.textDark }}>
@@ -57,15 +57,15 @@ export function S11_SHAP() {
               style={{ background: C.bgCard, border: '1px solid #e2e8f0' }}
               initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0, transition: { delay: 0.2 + i * 0.1 } }}
             >
-              <div className="px-3 py-2 font-bold text-sm text-white" style={{ background: color }}>{title}</div>
-              <div className="px-3 py-2.5 text-xs leading-relaxed" style={{ color: C.textMid }}>{body}</div>
+              <div className="px-3 py-2 font-bold text-base text-white" style={{ background: color }}>{title}</div>
+              <div className="px-3 py-2.5 text-sm leading-relaxed" style={{ color: C.textMid }}>{body}</div>
             </motion.div>
           ))}
         </div>
       </div>
 
       <motion.div
-        className="mt-2 px-4 py-2 text-xs font-bold text-white rounded"
+        className="mt-2 px-4 py-2 text-sm font-bold text-white rounded"
         style={{ background: C.teal }}
         initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { delay: 0.6 } }}
       >

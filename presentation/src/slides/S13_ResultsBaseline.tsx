@@ -19,7 +19,7 @@ export function S13_ResultsBaseline() {
   return (
     <LightSlide title="Results: Baseline — Full Features, Imbalanced Data" num={13}>
       <div className="flex flex-col h-full gap-2">
-        <motion.div className="px-4 py-2 text-xs font-bold text-white rounded"
+        <motion.div className="px-4 py-2 text-sm font-bold text-white rounded"
           style={{ background: C.teal }} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           LightGBM achieves the strongest baseline ROC-AUC at 0.918, ahead of CatBoost (0.910) and XGBoost (0.896)
         </motion.div>
@@ -60,7 +60,7 @@ export function S13_ResultsBaseline() {
                 </div>
               ))}
             </div>
-            <div className="mt-2 rounded p-2.5 text-xs leading-relaxed" style={{ background: '#DBEAFE', border: `1px solid ${C.teal}`, color: C.textDark }}>
+            <div className="mt-2 rounded p-2.5 text-sm leading-relaxed" style={{ background: '#DBEAFE', border: `1px solid ${C.teal}`, color: C.textDark }}>
               <strong>XGBoost</strong> shows highest recall (0.671) but much lower precision (0.269). <strong>LightGBM</strong> achieves the best overall balance: highest AUC, PR-AUC, and F1.
             </div>
           </motion.div>

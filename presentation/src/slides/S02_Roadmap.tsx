@@ -9,7 +9,8 @@ const sections = [
   ['04', 'Dataset & Methodology',     'IEEE-CIS data, pipeline, feature engineering, data split'],
   ['05', 'Experimental Results',      'Four configurations across three models'],
   ['06', 'Synthesis & Insights',      'Cross-experiment patterns and what they mean'],
-  ['07', 'Conclusions',               'Key takeaways and future research directions'],
+  ['07', 'Live Demo',                 'Live demonstration of the best-performing model pipeline in action'],
+  ['08', 'Conclusions',               'Key takeaways and future research directions'],
 ]
 
 export function S02_Roadmap() {

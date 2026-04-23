@@ -36,12 +36,12 @@ export function S18_Synthesis() {
               style={{ background: C.bgCard, border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.07)' }}
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0, transition: { delay: ci * 0.1 } }}
             >
-              <div className="px-3 py-2.5 font-bold text-sm text-white" style={{ background: color }}>{title}</div>
+              <div className="px-3 py-2.5 font-bold text-base text-white" style={{ background: color }}>{title}</div>
               <div className="px-3 py-2.5 flex flex-col gap-2">
                 {items.map((item, ii) => (
                   <div key={ii} className="flex items-start gap-2">
                     <div className="w-2 h-2 rounded-sm mt-1 flex-shrink-0" style={{ background: color }} />
-                    <div className="text-xs leading-snug" style={{ color: C.textMid }}>{item}</div>
+                    <div className="text-sm leading-snug" style={{ color: C.textMid }}>{item}</div>
                   </div>
                 ))}
               </div>
@@ -49,7 +49,7 @@ export function S18_Synthesis() {
           ))}
         </div>
 
-        <motion.div className="px-4 py-2 text-xs font-bold rounded" style={{ background: C.navyDark, color: C.tealBright }}
+        <motion.div className="px-4 py-2 text-sm font-bold rounded" style={{ background: C.navyDark, color: C.tealBright }}
           initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { delay: 0.4 } }}>
           Strong fraud detection depends not on the model alone, but on the full decision pipeline: features, balance, and threshold.
         </motion.div>

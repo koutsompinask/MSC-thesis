@@ -26,14 +26,14 @@ export function S06_Dataset() {
           style={{ background: C.bgCard, border: '1px solid #e2e8f0', boxShadow: '0 2px 10px rgba(0,0,0,0.07)' }}
           initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }}
         >
-          <div className="px-4 py-2.5 font-bold text-sm text-white" style={{ background: C.navyDark }}>
+          <div className="px-4 py-2.5 font-bold text-base text-white" style={{ background: C.navyDark }}>
             Source: IEEE-CIS Kaggle Competition
           </div>
           <div className="px-4 py-3 flex flex-col gap-3">
             {bullets.map(({ h, d }) => (
               <div key={h}>
-                <div className="font-semibold text-sm mb-0.5" style={{ color: C.textDark }}>{h}</div>
-                <div className="text-xs leading-relaxed" style={{ color: C.textMid }}>{d}</div>
+                <div className="font-semibold text-base mb-0.5" style={{ color: C.textDark }}>{h}</div>
+                <div className="text-sm leading-relaxed" style={{ color: C.textMid }}>{d}</div>
               </div>
             ))}
           </div>
@@ -47,10 +47,10 @@ export function S06_Dataset() {
           {metrics.map(({ val, lbl, bg }) => (
             <div key={val} className="rounded py-3 text-center flex flex-col items-center gap-0.5" style={{ background: bg }}>
               <div className="font-black text-white text-lg leading-none">{val}</div>
-              <div className="text-xs text-white opacity-75 leading-tight">{lbl}</div>
+              <div className="text-sm text-white opacity-75 leading-tight">{lbl}</div>
             </div>
           ))}
-          <div className="rounded p-2 text-xs text-center leading-snug" style={{ background: '#DBEAFE', border: `1px solid ${C.teal}`, color: C.textDark }}>
+          <div className="rounded p-2 text-sm text-center leading-snug" style={{ background: '#DBEAFE', border: `1px solid ${C.teal}`, color: C.textDark }}>
             Chronological data split to simulate real deployment
           </div>
         </motion.div>

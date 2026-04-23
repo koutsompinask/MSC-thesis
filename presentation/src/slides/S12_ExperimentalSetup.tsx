@@ -36,8 +36,8 @@ export function S12_ExperimentalSetup() {
             >
               <div className="w-10 flex-shrink-0 flex items-center justify-center font-bold text-sm text-white" style={{ background: color }}>{n}</div>
               <div className="flex-1 py-2 px-3">
-                <div className="font-semibold text-xs mb-0.5" style={{ color: C.textDark }}>{title}</div>
-                <div className="text-xs" style={{ color: C.textMid }}>{desc}</div>
+                <div className="font-semibold text-sm mb-0.5" style={{ color: C.textDark }}>{title}</div>
+                <div className="text-sm leading-relaxed" style={{ color: C.textMid }}>{desc}</div>
               </div>
             </motion.div>
           ))}
@@ -48,7 +48,7 @@ export function S12_ExperimentalSetup() {
           <motion.div className="rounded overflow-hidden" style={{ background: C.bgCard, border: '1px solid #e2e8f0' }}
             initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0, transition: { delay: 0.15 } }}
           >
-            <div className="px-3 py-2 font-bold text-xs text-white" style={{ background: C.navyDark }}>MODELS COMPARED</div>
+            <div className="px-3 py-2 font-bold text-sm text-white" style={{ background: C.navyDark }}>MODELS COMPARED</div>
             <div className="px-3 py-2 flex flex-col gap-2">
               {models.map(({ name, color }) => (
                 <div key={name} className="flex items-center gap-2">
@@ -61,12 +61,12 @@ export function S12_ExperimentalSetup() {
           <motion.div className="rounded overflow-hidden" style={{ background: C.bgCard, border: '1px solid #e2e8f0' }}
             initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0, transition: { delay: 0.25 } }}
           >
-            <div className="px-3 py-2 font-bold text-xs text-white" style={{ background: C.navyDark }}>EVALUATION METRICS</div>
+            <div className="px-3 py-2 font-bold text-sm text-white" style={{ background: C.navyDark }}>EVALUATION METRICS</div>
             <div className="px-3 py-2 flex flex-col gap-1.5">
               {metrics.map((m) => (
                 <div key={m} className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: C.teal }} />
-                  <span className="text-xs" style={{ color: C.textMid }}>{m}</span>
+                  <span className="text-sm" style={{ color: C.textMid }}>{m}</span>
                 </div>
               ))}
             </div>

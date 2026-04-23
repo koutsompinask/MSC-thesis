@@ -30,8 +30,8 @@ export function S09_EDA() {
                     {n}
                   </div>
                   <div>
-                    <div className="font-semibold text-sm mb-1" style={{ color: C.textDark }}>{title}</div>
-                    <div className="text-xs leading-relaxed" style={{ color: C.textMid }}>{body}</div>
+                    <div className="font-semibold text-base mb-1" style={{ color: C.textDark }}>{title}</div>
+                    <div className="text-sm leading-relaxed" style={{ color: C.textMid }}>{body}</div>
                   </div>
                 </div>
               </AccentCard>
@@ -40,7 +40,7 @@ export function S09_EDA() {
         </div>
 
         <motion.div
-          className="px-4 py-2 text-xs rounded"
+          className="px-4 py-2 text-sm rounded"
           style={{ background: C.navyDark, color: C.tealBright }}
           initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { delay: 0.5 } }}
         >

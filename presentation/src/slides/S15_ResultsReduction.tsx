@@ -21,7 +21,7 @@ export function S15_ResultsReduction() {
   return (
     <LightSlide title="Results: Feature Set Reduction" num={15}>
       <div className="flex flex-col h-full gap-2">
-        <motion.div className="px-4 py-2 text-xs font-bold text-white rounded" style={{ background: C.green }}
+        <motion.div className="px-4 py-2 text-sm font-bold text-white rounded" style={{ background: C.green }}
           initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           Compact models remain highly competitive — LightGBM slightly improves to 0.919 ROC-AUC with reduced features
         </motion.div>
@@ -44,7 +44,7 @@ export function S15_ResultsReduction() {
             {insights.map(({ color, title, desc }, i) => (
               <motion.div key={title} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0, transition: { delay: 0.1 + i * 0.08 } }}>
                 <AccentCard accent={color} title={title}>
-                  <div className="text-xs" style={{ color: C.textMid }}>{desc}</div>
+                  <div className="text-sm leading-relaxed" style={{ color: C.textMid }}>{desc}</div>
                 </AccentCard>
               </motion.div>
             ))}

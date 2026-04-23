@@ -25,14 +25,14 @@ export function S10_FeatureEngineering() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0, transition: { delay: i * 0.09 } }}
           >
-            <div className="px-3 py-2.5 font-bold text-sm text-white" style={{ background: color }}>
+            <div className="px-3 py-2.5 font-bold text-base text-white" style={{ background: color }}>
               {title}
             </div>
             <div className="px-3 py-2.5 flex flex-col gap-2">
               {items.map((item) => (
                 <div key={item} className="flex items-start gap-2">
                   <div className="w-2 h-2 rounded-sm mt-1 flex-shrink-0" style={{ background: color }} />
-                  <div className="text-xs leading-snug" style={{ color: C.textMid }}>{item}</div>
+                  <div className="text-sm leading-snug" style={{ color: C.textMid }}>{item}</div>
                 </div>
               ))}
             </div>
