@@ -13,9 +13,9 @@ const after = [
   { model: 'CatBoost', mc: C.purple, recall: '0.757', delta: '+64.2%', auc: '0.916' },
 ]
 
-export function S14_ResultsDownsampling() {
+export function S13_ResultsDownsampling() {
   return (
-    <LightSlide title="Results: Majority-Class Downsampling (1:5)" num={14}>
+    <LightSlide title="Results: Majority-Class Downsampling (1:5)" num={13}>
       <div className="flex flex-col h-full gap-4">
         <motion.div className="px-5 py-3 text-base font-bold text-white rounded" style={{ background: C.purple }}
           initial={{ opacity: 0 }} animate={{ opacity: 1 }}>

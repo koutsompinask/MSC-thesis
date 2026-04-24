@@ -37,7 +37,7 @@ export function S20_LiveDemo() {
           </div>
 
           {/* Right panel */}
-          <div className="flex-1 flex flex-col p-6 gap-4 overflow-hidden">
+          <div className="flex-1 flex flex-col p-5 pb-10 gap-2 overflow-hidden">
             {/* Transaction selector */}
             <TransactionCards />
 
@@ -51,7 +51,7 @@ export function S20_LiveDemo() {
             <AnimatePresence>
               {isDone && result && (
                 <motion.div
-                  className="flex gap-5 flex-1 overflow-hidden"
+                  className="flex gap-5 flex-1 min-h-0 overflow-hidden"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } }}
                   exit={{ opacity: 0 }}
@@ -66,10 +66,10 @@ export function S20_LiveDemo() {
 
                   {/* SHAP waterfall */}
                   <div
-                    className="flex-1 rounded-lg p-5 overflow-hidden"
+                    className="flex-1 rounded-lg p-4 overflow-hidden"
                     style={{ background: C.navyMid, border: `1px solid #1A3A5C` }}
                   >
-                    <ShapWaterfall shapValues={result.shap_values} baseValue={result.shap_base_value} />
+                    <ShapWaterfall shapValues={result.shap_values} />
                   </div>
                 </motion.div>
               )}

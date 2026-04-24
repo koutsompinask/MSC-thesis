@@ -13,10 +13,10 @@ import { S07_Methodology } from './slides/S07_Methodology'
 import { S08_DataSplit } from './slides/S08_DataSplit'
 import { S09_EDA } from './slides/S09_EDA'
 import { S10_FeatureEngineering } from './slides/S10_FeatureEngineering'
-import { S11_SHAP } from './slides/S11_SHAP'
-import { S12_ExperimentalSetup } from './slides/S12_ExperimentalSetup'
-import { S13_ResultsBaseline } from './slides/S13_ResultsBaseline'
-import { S14_ResultsDownsampling } from './slides/S14_ResultsDownsampling'
+import { S11_ExperimentalSetup } from './slides/S11_ExperimentalSetup'
+import { S12_ResultsBaseline } from './slides/S12_ResultsBaseline'
+import { S13_ResultsDownsampling } from './slides/S13_ResultsDownsampling'
+import { S14_SHAP } from './slides/S14_SHAP'
 import { S15_ResultsReduction } from './slides/S15_ResultsReduction'
 import { S16_ResultsThreshold } from './slides/S16_ResultsThreshold'
 import { S17_ChampionScorecard } from './slides/S17_ChampionScorecard'
@@ -28,8 +28,8 @@ import { S21_ThankYou } from './slides/S21_ThankYou'
 const SLIDES = [
   S01_Title, S02_Roadmap, S03_Challenge, S04_ResearchQuestions,
   S05_Literature, S06_Dataset, S07_Methodology, S08_DataSplit,
-  S09_EDA, S10_FeatureEngineering, S11_SHAP, S12_ExperimentalSetup,
-  S13_ResultsBaseline, S14_ResultsDownsampling, S15_ResultsReduction, S16_ResultsThreshold,
+  S09_EDA, S10_FeatureEngineering, S11_ExperimentalSetup,
+  S12_ResultsBaseline, S13_ResultsDownsampling, S14_SHAP, S15_ResultsReduction, S16_ResultsThreshold,
   S17_ChampionScorecard, S18_Synthesis, S19_Conclusions,
   S20_LiveDemo, S21_ThankYou,
 ]

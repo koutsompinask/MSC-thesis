@@ -3,14 +3,14 @@ import { LightSlide } from '../components/SlideLayout'
 import { C } from '../design/tokens'
 
 const cats = [
-  { color: C.teal,   title: 'Behavioral Aggregates',
-    items: ['User-level transaction means (_mean)', 'Relative deviation from user baseline (_rel)', 'Activity frequency signals (_freq, _std, _avg)'] },
-  { color: C.purple, title: 'Temporal Patterns',
-    items: ['Hour of day & day of week context', 'Delta-time between transactions', 'Sequence-aware user behavior signals'] },
-  { color: C.green,  title: 'Entity Interactions',
-    items: ['Amount × card type features', 'Amount × product category signals', 'Cross-feature transaction relationships'] },
-  { color: C.amber,  title: 'Why It Matters',
-    items: ['Captures hidden transaction habits', 'Improves discrimination beyond raw fields', 'Engineered features ranked top predictors across all 3 models'] },
+  { color: C.teal,   title: 'User Anchor',
+    items: ['Simulated uid from card1 + addr1 + account-age proxy', 'Turns anonymized rows into repeatable behavior groups', 'Enables each transaction to be compared with its own baseline'] },
+  { color: C.purple, title: 'Numeric Deviations',
+    items: ['Group numeric fields by uid, card type, product and time context', 'Create _mean, _std and _rel features', 'Capture transactions that are unusual for that entity/context'] },
+  { color: C.green,  title: 'Categorical Frequency',
+    items: ['Group categorical fields by uid', 'Create value-count and frequency features (_ct, _freq)', 'Expose rare device, email, match-flag and identity combinations'] },
+  { color: C.amber,  title: 'Selection Logic',
+    items: ['Generate broad relational feature space first', 'Let model importance remove redundant signals', 'Several engineered aggregates ranked among the strongest predictors'] },
 ]
 
 export function S10_FeatureEngineering() {

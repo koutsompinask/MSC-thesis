@@ -20,9 +20,9 @@ const models = [
 ]
 const metrics = ['ROC-AUC (primary)', 'PR-AUC', 'Precision / Recall', 'F1-Score']
 
-export function S12_ExperimentalSetup() {
+export function S11_ExperimentalSetup() {
   return (
-    <LightSlide title="Experimental Configurations" num={12}>
+    <LightSlide title="Experimental Configurations" num={11}>
       <div className="flex gap-5 h-full">
         {/* Left: configs */}
         <div className="flex-1 flex flex-col gap-2">

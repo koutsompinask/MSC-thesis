@@ -1,6 +1,5 @@
 import { motion } from 'framer-motion'
 import { LightSlide } from '../components/SlideLayout'
-import { AccentCard } from '../components/AccentCard'
 import { C } from '../design/tokens'
 
 const conclusions = [
@@ -20,13 +19,13 @@ const future = [
 export function S19_Conclusions() {
   return (
     <LightSlide title="Conclusions & Future Research" num={19}>
-      <div className="flex gap-5 h-full">
+      <div className="grid grid-cols-[3fr_2fr] gap-4 h-full pb-7">
         {/* Left: conclusions */}
-        <motion.div className="flex-1 rounded overflow-hidden"
+        <motion.div className="rounded overflow-hidden min-w-0"
           style={{ background: C.bgCard, border: '1px solid #e2e8f0' }}
           initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }}>
           <div className="px-4 py-2.5 font-bold text-base text-white" style={{ background: C.navyDark }}>KEY CONCLUSIONS</div>
-          <div className="px-4 py-3 flex flex-col gap-3">
+          <div className="px-4 py-3 flex flex-col gap-2.5">
             {conclusions.map(({ n, text }, i) => (
               <motion.div key={n} className="flex items-start gap-3"
                 initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0, transition: { delay: 0.1 + i * 0.1 } }}>
@@ -38,16 +37,24 @@ export function S19_Conclusions() {
         </motion.div>
 
         {/* Right: future work */}
-        <motion.div className="w-56 rounded overflow-hidden"
+        <motion.div className="rounded overflow-hidden min-w-0"
           style={{ background: C.bgCard, border: '1px solid #e2e8f0' }}
           initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0, transition: { delay: 0.15 } }}>
           <div className="px-4 py-2.5 font-bold text-base text-white" style={{ background: C.navyDark }}>FUTURE RESEARCH</div>
-          <div className="px-3 py-3 flex flex-col gap-2">
+          <div className="px-3 py-3 grid grid-rows-4 gap-2 h-[calc(100%-42px)]">
             {future.map(({ color, title, desc }, i) => (
-              <motion.div key={title} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0, transition: { delay: 0.2 + i * 0.09 } }}>
-                <AccentCard accent={color} title={title}>
-                  <div className="text-sm leading-relaxed" style={{ color: C.textMid }}>{desc}</div>
-                </AccentCard>
+              <motion.div
+                key={title}
+                className="flex rounded overflow-hidden"
+                style={{ background: '#F8FBFF', border: '1px solid #e2e8f0' }}
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0, transition: { delay: 0.2 + i * 0.09 } }}
+              >
+                <div className="w-1.5 flex-shrink-0" style={{ background: color }} />
+                <div className="px-3 py-2 flex flex-col justify-center">
+                  <div className="font-semibold text-sm leading-tight mb-1" style={{ color: C.textDark }}>{title}</div>
+                  <div className="text-xs leading-snug" style={{ color: C.textMid }}>{desc}</div>
+                </div>
               </motion.div>
             ))}
           </div>

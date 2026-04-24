@@ -5,23 +5,28 @@ import { C } from '../design/tokens'
 
 const findings = [
   { n: '01', color: C.red,    title: 'Severe Class Imbalance',
-    body: 'Only ~3.5% of transactions are fraudulent. A naive majority-predictor achieves 96.5% accuracy — making recall-oriented metrics essential for meaningful evaluation.' },
+    body: 'Only 20,663 of 590,540 transactions are fraud (~3.5%). Accuracy alone becomes misleading, so ROC-AUC, PR-AUC, recall and threshold trade-offs matter.' },
   { n: '02', color: C.amber,  title: 'Temporal Fraud Signatures',
-    body: 'Fraud rates vary significantly by hour of day and day of week. Time-series patterns reveal that fraudsters tend to operate at specific temporal windows.' },
+    body: 'Raw TransactionDT looked noisy, but deriving day_of_week and hour_of_day exposed clearer fraud-rate patterns. This motivated amount-by-hour/day context features.' },
   { n: '03', color: C.teal,   title: 'Widespread Missing Values',
-    body: 'Missing values are unevenly distributed across feature groups (identity table has most). Handling missingness is central to model performance, not just a preprocessing detail.' },
+    body: '214 features had >50% missing values. In fraud data, missing identity/device details can itself be informative, so only >99% missing columns were dropped.' },
   { n: '04', color: C.purple, title: 'Behavioral & Categorical Signals',
-    body: 'Transaction amount, decimal patterns (3 decimal places = higher fraud risk), product category, and card/email domain features all show meaningful shifts between fraud and non-fraud.' },
+    body: 'Amount extremes, 3-decimal transactions (11.77% fraud), product/card/email shifts, and rare domains justified relational aggregates: _mean, _std, _rel, _ct and _freq.' },
 ]
 
 export function S09_EDA() {
   return (
     <LightSlide title="Exploratory Data Analysis: Key Patterns" num={9}>
       <div className="flex flex-col h-full gap-2">
-        <div className="grid grid-cols-2 gap-3 flex-1">
+        <div className="grid grid-cols-2 gap-x-2 gap-y-3 flex-1 -mx-2">
           {findings.map(({ n, color, title, body }, i) => (
-            <motion.div key={n} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0, transition: { delay: i * 0.09 } }}>
-              <AccentCard accent={color}>
+            <motion.div
+              key={n}
+              className="h-full"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0, transition: { delay: i * 0.09 } }}
+            >
+              <AccentCard accent={color} className="h-full">
                 <div className="flex items-start gap-2.5">
                   <div
                     className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-xs text-white"
@@ -44,7 +49,7 @@ export function S09_EDA() {
           style={{ background: C.navyDark, color: C.tealBright }}
           initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { delay: 0.5 } }}
         >
-          <strong>EDA TAKEAWAY:</strong> Fraud is not random noise — it leaves temporal, behavioral, and categorical signatures that machine learning can exploit.
+          <strong>EDA TAKEAWAY:</strong> The engineered features were not arbitrary — they encoded the exact temporal, amount, user, card and category deviations surfaced by EDA.
         </motion.div>
       </div>
     </LightSlide>
