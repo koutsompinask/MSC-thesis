@@ -24,8 +24,8 @@ export function S20_LiveDemo() {
             </div>
           </div>
           <div className="flex items-center gap-4 text-sm" style={{ color: C.textMuted }}>
-            <span>ROC-AUC: <strong style={{ color: C.white }}>0.9191</strong></span>
-            <span>PR-AUC: <strong style={{ color: C.white }}>0.5737</strong></span>
+            <span>ROC-AUC: <strong style={{ color: C.white }}>0.919</strong></span>
+            <span>PR-AUC: <strong style={{ color: C.white }}>0.566</strong></span>
           </div>
         </div>
 

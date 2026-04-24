@@ -4,11 +4,11 @@ import { AccentCard } from '../components/AccentCard'
 import { C } from '../design/tokens'
 
 const challenges = [
-  { color: C.red,    title: 'Extreme Class Imbalance',        desc: 'Fraudulent transactions represent only ~3.5% of all activity. Standard models learn to predict the majority class and miss fraud entirely.' },
-  { color: C.amber,  title: 'Continuously Evolving Tactics',  desc: 'Fraudsters constantly adapt their methods to evade detection, making rule-based systems obsolete within months.' },
+  { color: C.red,    title: 'Severe Class Imbalance',         desc: 'Fraudulent transactions represent only ~3.5% of all activity. Models can appear accurate while still failing to detect fraud reliably.' },
+  { color: C.amber,  title: 'Evolving Fraud Patterns',        desc: 'Fraud strategies change over time, so fixed rules and manual review are limited when patterns become more complex.' },
   { color: C.green,  title: 'False Positives vs. False Negatives', desc: 'Catching more fraud usually means flagging more legitimate transactions. The operating threshold must balance fraud losses against analyst workload and customer friction.' },
-  { color: C.teal,   title: 'Real-Time Constraints',          desc: 'Detection decisions must be made in milliseconds at scale — complex models must also be computationally practical.' },
-  { color: C.purple, title: 'Interpretability vs. Accuracy',  desc: 'Complex ensemble models achieve the best results, but financial regulators and risk teams demand explainable decisions.' },
+  { color: C.teal,   title: 'Operational Constraints',        desc: 'Fraud detection systems must support timely decisions, minimize customer disruption, and remain practical for investigation workflows.' },
+  { color: C.purple, title: 'Interpretability vs. Accuracy',  desc: 'Ensemble models can perform strongly, but their complexity makes explainability important for understanding model decisions.' },
 ]
 
 

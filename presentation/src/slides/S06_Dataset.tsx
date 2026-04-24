@@ -4,9 +4,9 @@ import { C } from '../design/tokens'
 
 const bullets = [
   { h: 'Transaction Table',  d: 'Contains TransactionDT, TransactionAmt, ProductCD, card types, email domains, and 300+ Vesta-engineered features.' },
-  { h: 'Identity Table',     d: 'Device type, browser, OS, network information, and biometric proxy features linked to transactions.' },
+  { h: 'Identity Table',     d: 'Contains device, browser, operating-system, and identity-related information linked to transactions.' },
   { h: 'Target Variable',    d: 'Binary: isFraud = 1 for fraudulent, 0 for legitimate. Severe imbalance: ~3.5% positive rate.' },
-  { h: 'Why IEEE-CIS?',      d: 'Reflects real e-commerce complexity — not a toy dataset. Used in Kaggle competition where top solutions achieved ~96% ROC-AUC.' },
+  { h: 'Why IEEE-CIS?',      d: 'Represents a large e-commerce fraud benchmark with realistic feature complexity and class imbalance. Top Kaggle solutions approached ~96% ROC-AUC.' },
 ]
 
 const metrics = [

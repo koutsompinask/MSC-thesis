@@ -12,17 +12,17 @@ const columns = [
     ]},
   { color: C.green, title: 'What Improved',
     items: [
-      'Downsampling increased minority-class learning → recall improved for all models',
+      'Downsampling improved XGBoost and CatBoost ROC-AUC while LightGBM gained PR-AUC',
       'Reduced features preserved strong discrimination with lower complexity',
-      'Threshold reduction sharply increased fraud capture (recall ↑ to 0.9+)',
-      'Feature reduction led to marginal AUC improvements in LightGBM and CatBoost',
+      'Threshold reduction sharply increased fraud capture, with recall near or above 0.9',
+      'Feature reduction preserved near-full discriminatory power with a compact feature set',
     ]},
   { color: C.amber, title: 'What This Means',
     items: [
       'Fraud detection is an operational optimization problem, not just a modeling task',
-      'Model choice, sampling strategy, and threshold must be tuned together holistically',
-      'No single metric tells the complete deployment story — context is everything',
-      'A compact, well-calibrated model can outperform a complex one at lower cost',
+      'Model choice, sampling strategy, and threshold jointly affect deployment behavior',
+      'ROC-AUC, PR-AUC, precision, recall and F1 each reveal different trade-offs',
+      'A compact reduced-feature model can retain strong performance with lower complexity',
     ]},
 ]
 

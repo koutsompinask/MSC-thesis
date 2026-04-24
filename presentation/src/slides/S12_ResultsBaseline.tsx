@@ -10,9 +10,9 @@ const chartData = [
 ]
 
 const tableRows = [
-  { model: 'XGBoost',  mc: C.amber,  auc: '0.896', prauc: '0.496', f1: '0.384', prec: '0.269', rec: '0.671' },
-  { model: 'LightGBM', mc: C.teal,   auc: '0.918', prauc: '0.537', f1: '0.506', prec: '0.588', rec: '0.456' },
-  { model: 'CatBoost', mc: C.purple, auc: '0.910', prauc: '0.510', f1: '0.475', prec: '0.490', rec: '0.461' },
+  { model: 'XGBoost',  mc: C.amber,  auc: '0.896', prauc: '0.487', f1: '0.384', prec: '0.269', rec: '0.671' },
+  { model: 'LightGBM', mc: C.teal,   auc: '0.918', prauc: '0.537', f1: '0.506', prec: '0.463', rec: '0.558' },
+  { model: 'CatBoost', mc: C.purple, auc: '0.910', prauc: '0.519', f1: '0.380', prec: '0.258', rec: '0.725' },
 ]
 
 export function S12_ResultsBaseline() {
@@ -68,7 +68,7 @@ export function S12_ResultsBaseline() {
               ))}
             </div>
             <div className="mt-2 rounded p-2.5 text-sm leading-snug" style={{ background: '#DBEAFE', border: `1px solid ${C.teal}`, color: C.textDark }}>
-              <strong>XGBoost</strong> shows highest recall (0.671) but much lower precision (0.269). <strong>LightGBM</strong> achieves the best overall balance: highest AUC, PR-AUC, and F1.
+              <strong>CatBoost</strong> shows highest recall (0.725) but low precision (0.258). <strong>LightGBM</strong> achieves the strongest baseline balance: highest AUC, PR-AUC, and F1.
             </div>
           </motion.div>
         </div>

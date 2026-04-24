@@ -4,20 +4,20 @@ import { C } from '../design/tokens'
 
 const approaches = [
   { color: C.red,    tag: 'Traditional Supervised',
-    models: 'Logistic Regression, SVM, Decision Trees',
+    models: 'Logistic Regression, SVM, Decision Trees, Random Forests',
     pro: 'Interpretable, fast, well-understood',
-    con: 'Limited capacity to model complex interactions; poor recall on severe imbalance' },
+    con: 'Requires representative labeled fraud data and special handling under severe imbalance' },
   { color: C.amber,  tag: 'Anomaly Detection',
-    models: 'Isolation Forest, One-Class SVM, LOF',
+    models: 'K-means, DBSCAN, One-Class SVM, Isolation Forest',
     pro: 'Works without labeled fraud — useful when labels are scarce',
     con: 'High false positive rates; not optimized for known fraud patterns in labeled data' },
   { color: C.purple, tag: 'Deep Learning',
-    models: 'LSTM, Autoencoders, Transformers',
-    pro: 'Powerful on sequential/unstructured data; learns latent representations',
+    models: 'ANNs, RNN/LSTM, GNNs, Autoencoders',
+    pro: 'Can model nonlinear, sequential, or relational fraud patterns when richer structure is available',
     con: 'High-capacity, high-variance models can overfit tabular fraud data; also require large datasets, high compute, and are harder to explain' },
   { color: C.teal,   tag: 'Gradient Boosting Ensembles',
     models: 'XGBoost, LightGBM, CatBoost',
-    pro: 'State-of-the-art on tabular data; they win many ML competitions, including the IEEE-CIS benchmark used in this thesis',
+    pro: 'Strong fit for structured, labeled transaction data and a practical balance of performance and feasibility',
     con: 'Ensemble complexity requires SHAP or similar for interpretability' },
 ]
 
@@ -57,7 +57,7 @@ export function S05_Literature() {
           style={{ background: C.navyDark, color: C.tealBright }}
           initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { delay: 0.5 } }}
         >
-          Literature consensus: gradient boosting remains the strongest choice for structured, labeled fraud data, offering competition-level performance on tabular benchmarks while preserving a practical path to explainability through SHAP.
+          Literature takeaway: ensemble-based supervised approaches offer a favorable balance between detection performance and operational feasibility when sufficient labeled data are available.
         </motion.div>
       </div>
     </LightSlide>

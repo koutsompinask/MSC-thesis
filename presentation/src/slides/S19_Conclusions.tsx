@@ -5,15 +5,15 @@ import { C } from '../design/tokens'
 const conclusions = [
   { n: 1, text: 'Gradient boosting models are highly effective for fraud detection on the IEEE-CIS dataset, achieving strong discrimination without deep learning complexity.' },
   { n: 2, text: 'LightGBM was the most dependable model overall, with ROC-AUC ≈ 0.918–0.919 across configurations — making it the recommended baseline choice.' },
-  { n: 3, text: 'Behavioral feature engineering materially improved model insight and performance. Engineered features consistently ranked among top predictors via SHAP analysis.' },
-  { n: 4, text: 'SHAP explainability was implemented for all models, delivering both global feature rankings and per-prediction local attribution — bridging accuracy and interpretability.' },
+  { n: 3, text: 'Engineered aggregate behavioral features ranked among the most important predictors and helped preserve performance after feature reduction.' },
+  { n: 4, text: 'Threshold tuning substantially increased recall but reduced precision, showing that deployment requires explicit trade-off management.' },
 ]
 
 const future = [
-  { color: C.purple, title: 'Advanced Imbalance Methods',   desc: 'Cost-sensitive learning, focal losses, SMOTE variants on harder datasets' },
-  { color: C.teal,   title: 'Real-Time SHAP Deployment',    desc: 'Embed SHAP scoring in live inference pipelines for regulatory compliance' },
-  { color: C.green,  title: 'Ensemble & Hybrid Systems',    desc: 'Combine rule-based and ML approaches for broader fraud coverage' },
-  { color: C.amber,  title: 'Model Drift Monitoring',       desc: 'Longitudinal monitoring of model performance as fraud tactics evolve' },
+  { color: C.purple, title: 'Cost-Aware Thresholds',         desc: 'Select thresholds using review capacity or explicit false-positive and false-negative costs' },
+  { color: C.teal,   title: 'Probability Calibration',       desc: 'Improve whether predicted risk scores reflect true fraud likelihood' },
+  { color: C.green,  title: 'Richer Features & Data',        desc: 'Use behavioral histories, temporal patterns, relational signals, and larger transaction datasets' },
+  { color: C.amber,  title: 'Robustness Extensions',         desc: 'Explore ensemble strategies and drift-aware evaluation as fraud patterns evolve' },
 ]
 
 export function S19_Conclusions() {
