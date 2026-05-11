@@ -4,15 +4,15 @@ import { LightSlide } from '../components/SlideLayout'
 import { C } from '../design/tokens'
 
 const chartData = [
-  { model: 'XGBoost',  full: 0.896, reduced: 0.905 },
-  { model: 'LightGBM', full: 0.918, reduced: 0.919 },
-  { model: 'CatBoost', full: 0.910, reduced: 0.914 },
+  { model: 'XGBoost',  full: 0.908, reduced: 0.905 },
+  { model: 'LightGBM', full: 0.917, reduced: 0.919 },
+  { model: 'CatBoost', full: 0.916, reduced: 0.914 },
 ]
 
 const insights = [
   { color: C.green,  title: 'Performance Maintained',  desc: 'All three models retain near-identical ROC-AUC after compression. LightGBM marginally improves to 0.919.' },
   { color: C.teal,   title: 'Top Engineered Features', desc: 'Behavioral aggregates (_mean, _rel, _avg, _std, _freq) consistently rank as the strongest predictors.' },
-  { color: C.purple, title: 'SHAP-Driven Selection',   desc: 'Top 30% importance per model, kept when ≥2 models agree — reduces feature set from 434 to 215.' },
+  { color: C.purple, title: 'SHAP-Driven Selection',   desc: 'Top 30% importance per model, kept when ≥2 models agree — reduces model inputs from 748 to 215.' },
   { color: C.amber,  title: 'Deployment Advantage',    desc: 'Fewer features = faster inference, simpler pipelines, lower maintenance cost in production.' },
 ]
 
@@ -33,7 +33,7 @@ export function S15_ResultsReduction() {
                 <XAxis dataKey="model" tick={{ fill: C.textMid, fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis domain={[0.87, 0.93]} tick={{ fill: C.textMid, fontSize: 10 }} axisLine={false} tickLine={false} tickCount={4} />
                 <Legend wrapperStyle={{ fontSize: 11, color: C.textMid }} />
-                <Bar dataKey="full" name="Full Features" fill={C.textMuted} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="full" name="Downsampled Full Features" fill={C.textMuted} radius={[4, 4, 0, 0]} />
                 <Bar dataKey="reduced" name="Reduced Features" fill={C.teal} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

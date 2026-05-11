@@ -4,7 +4,7 @@ import { C } from '../design/tokens'
 
 const configs = [
   { n: 'C1', color: C.teal,   title: 'Baseline — Full Features, Imbalanced Data',
-    desc: 'Train on original data without any rebalancing. Establishes the performance ceiling for raw gradient boosting.' },
+    desc: 'Train on original data without any rebalancing. Establishes the baseline reference for raw gradient boosting.' },
   { n: 'C2', color: C.purple, title: 'Majority-Class Downsampling (1:5 Ratio)',
     desc: 'Reduce legitimate transactions to 1:5 ratio. Tests whether controlled rebalancing helps models learn fraud patterns better.' },
   { n: 'C3', color: C.green,  title: 'Reduced Feature Set (SHAP-Based Selection)',

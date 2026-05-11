@@ -70,6 +70,9 @@ export function S12_ResultsBaseline() {
             <div className="mt-2 rounded p-2.5 text-sm leading-snug" style={{ background: '#DBEAFE', border: `1px solid ${C.teal}`, color: C.textDark }}>
               <strong>CatBoost</strong> shows highest recall (0.725) but low precision (0.258). <strong>LightGBM</strong> achieves the strongest baseline balance: highest AUC, PR-AUC, and F1.
             </div>
+            <div className="mt-2 rounded p-2.5 text-sm leading-snug" style={{ background: C.navyDark, color: C.tealBright }}>
+              <strong>Why LightGBM?</strong> Its histogram-based split finding handles the high-dimensional feature space efficiently and may act as mild regularization under severe imbalance.
+            </div>
           </motion.div>
         </div>
       </div>

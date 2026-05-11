@@ -56,9 +56,9 @@ export function S14_SHAP() {
           <div className="w-56 flex flex-col gap-2">
             {[
               { color: C.teal, title: 'Global Selection',
-                body: 'Mean absolute SHAP ranks the variables driving model predictions across a balanced evaluation sample.' },
+                body: 'Mean absolute SHAP ranks the variables driving model predictions across the trained gradient boosting models.' },
               { color: C.green, title: 'Cross-Model Agreement',
-                body: 'Features in the top 30% for at least two models were kept, reducing 434 inputs to 215.' },
+                body: 'Features in the top 30% for at least two models were kept, reducing 748 model inputs to 215.' },
               { color: C.purple, title: 'Local Explanations',
                 body: 'The same SHAP machinery supports per-transaction attribution in the live demo.' },
             ].map(({ color, title, body }, i) => (

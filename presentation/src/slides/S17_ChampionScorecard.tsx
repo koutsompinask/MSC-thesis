@@ -64,7 +64,7 @@ export function S17_ChampionScorecard() {
 
         <motion.div className="mt-4 rounded px-4 py-2.5 text-sm leading-relaxed" style={{ background: C.navyMid, border: `1px solid ${C.teal}`, color: C.tealBright }}
           initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { delay: 0.5 } }}>
-          LightGBM provides the most stable and dominant discriminatory performance across all configurations. Notably, feature reduction (Config 3) slightly improves LightGBM to 0.919.
+          LightGBM provides the most stable ROC-AUC performance. Thesis rationale: histogram-based split finding handles the high-dimensional feature space efficiently and may regularize under severe imbalance.
         </motion.div>
       </div>
     </DarkSlide>

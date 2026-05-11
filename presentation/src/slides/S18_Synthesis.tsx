@@ -5,7 +5,7 @@ import { C } from '../design/tokens'
 const columns = [
   { color: C.navyMid, title: 'What Stayed Consistent',
     items: [
-      'LightGBM was the most reliable model across all four experiments',
+      'LightGBM was the most stable ROC-AUC performer across the main model configurations',
       'Engineered behavioral features repeatedly appeared as the strongest predictors',
       'ROC-AUC remained stable even when the experimental setup changed significantly',
       'Gradient boosting models proved robust to different data conditions',
