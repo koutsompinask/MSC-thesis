@@ -3,6 +3,9 @@ import { AnimatePresence } from 'framer-motion'
 import { usePresentationStore } from './store/usePresentationStore'
 import { useKeyNav } from './hooks/useKeyNav'
 import { NavBar } from './components/NavBar'
+import { PointerOverlay } from './remote/PointerOverlay'
+import { RemoteControlPage } from './remote/RemoteControlPage'
+import { usePresenterRemote } from './remote/usePresenterRemote'
 import { S01_Title } from './slides/S01_Title'
 import { S02_Roadmap } from './slides/S02_Roadmap'
 import { S03_Challenge } from './slides/S03_Challenge'
@@ -34,9 +37,10 @@ const SLIDES = [
   S20_LiveDemo, S21_ThankYou,
 ]
 
-export default function App() {
-  const { currentSlide, setTotal } = usePresentationStore()
+function PresentationApp() {
+  const { currentSlide, setTotal, totalSlides, next, prev, goTo } = usePresentationStore()
   useKeyNav()
+  const { pointer } = usePresenterRemote({ currentSlide, totalSlides, next, prev, goTo })
 
   useEffect(() => {
     setTotal(SLIDES.length)
@@ -79,8 +83,17 @@ export default function App() {
         <AnimatePresence mode="wait">
           <ActiveSlide key={currentSlide} />
         </AnimatePresence>
+        <PointerOverlay pointer={pointer} />
         <NavBar />
       </div>
     </div>
   )
+}
+
+export default function App() {
+  if (window.location.pathname === '/remote') {
+    return <RemoteControlPage />
+  }
+
+  return <PresentationApp />
 }
