@@ -4,6 +4,10 @@ export type RemoteCommand =
   | { type: 'command'; action: 'next' | 'prev' | 'home' | 'end' }
   | { type: 'command'; action: 'goTo'; slide: number }
 
+export type DemoCommand =
+  | { type: 'demo'; action: 'select'; example: 'clear_fraud' | 'clear_legit' | 'borderline' }
+  | { type: 'demo'; action: 'run' | 'reset' | 'jump' }
+
 export interface RemotePointer {
   visible: boolean
   x: number
@@ -13,6 +17,7 @@ export interface RemotePointer {
 export type RemoteMessage =
   | { type: 'hello'; role: 'presenter' | 'remote' }
   | RemoteCommand
+  | DemoCommand
   | { type: 'state'; currentSlide: number; totalSlides: number }
   | { type: 'pointer'; pointer: RemotePointer }
   | { type: 'clients'; clients: number }

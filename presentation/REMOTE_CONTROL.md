@@ -33,6 +33,9 @@ The phone and laptop must be on the same network. A phone hotspot is usually mor
 - `Next` and `Previous` change slides.
 - `First Slide` and `Last Slide` jump to boundaries.
 - The pointer pad controls a red laser pointer overlay on the presentation.
+- `Slide 20 Demo` controls can jump to the live-demo slide, select High/Mid/Low risk examples, run inference, and reset the demo.
+
+For the demo controls to work, the FastAPI backend used by `/api/examples` and `/api/predict_explain` must also be running.
 
 ## Troubleshooting
 

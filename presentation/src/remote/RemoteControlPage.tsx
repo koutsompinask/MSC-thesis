@@ -108,6 +108,51 @@ export function RemoteControlPage() {
         </div>
 
         <section className="flex-1 flex flex-col min-h-0">
+          <div className="mb-4 rounded-2xl border border-cyan-900/70 bg-slate-950/70 p-3">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="font-bold text-cyan-200">Slide 20 Demo</div>
+              <button
+                className="rounded-lg bg-cyan-950 px-3 py-2 text-xs font-bold text-cyan-200 active:scale-[0.98] disabled:opacity-40"
+                disabled={!connected}
+                onClick={() => command({ type: 'demo', action: 'jump' })}
+              >
+                Jump
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                ['High', 'clear_fraud'],
+                ['Mid', 'borderline'],
+                ['Low', 'clear_legit'],
+              ].map(([label, example]) => (
+                <button
+                  key={example}
+                  className="rounded-xl bg-slate-800 py-3 text-sm font-black active:scale-[0.98] disabled:opacity-40"
+                  disabled={!connected}
+                  onClick={() => command({ type: 'demo', action: 'select', example: example as 'clear_fraud' | 'clear_legit' | 'borderline' })}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button
+                className="rounded-xl bg-emerald-500 py-3 text-sm font-black text-slate-950 active:scale-[0.98] disabled:opacity-40"
+                disabled={!connected}
+                onClick={() => command({ type: 'demo', action: 'run' })}
+              >
+                Run Demo
+              </button>
+              <button
+                className="rounded-xl bg-slate-900 py-3 text-sm font-bold text-slate-300 active:scale-[0.98] disabled:opacity-40"
+                disabled={!connected}
+                onClick={() => command({ type: 'demo', action: 'reset' })}
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
           <div className="mb-2 flex items-center justify-between">
             <div className="font-bold text-cyan-200">Laser Pointer</div>
             <div className="text-xs text-slate-500">touch and drag</div>
