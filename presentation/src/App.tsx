@@ -41,10 +41,16 @@ function PresentationApp() {
   const { currentSlide, setTotal, totalSlides, next, prev, goTo } = usePresentationStore()
   useKeyNav()
   const { pointer } = usePresenterRemote({ currentSlide, totalSlides, next, prev, goTo })
+  const params = new URLSearchParams(window.location.search)
+  const isPptxExport = params.has('pptxExport')
+  const exportSlide = Number(params.get('slide'))
 
   useEffect(() => {
     setTotal(SLIDES.length)
-  }, [setTotal])
+    if (isPptxExport && Number.isInteger(exportSlide)) {
+      goTo(exportSlide)
+    }
+  }, [exportSlide, goTo, isPptxExport, setTotal])
 
   // Scale slide to fill viewport while preserving 16:9
   const containerRef = useRef<HTMLDivElement>(null)
@@ -83,8 +89,8 @@ function PresentationApp() {
         <AnimatePresence mode="wait">
           <ActiveSlide key={currentSlide} />
         </AnimatePresence>
-        <PointerOverlay pointer={pointer} />
-        <NavBar />
+        {!isPptxExport && <PointerOverlay pointer={pointer} />}
+        {!isPptxExport && <NavBar />}
       </div>
     </div>
   )
