@@ -1,4 +1,5 @@
 /.fraud
+/.presentation
 /ieee-fraud-detection-data
 /ai-gen
 *.pyc
