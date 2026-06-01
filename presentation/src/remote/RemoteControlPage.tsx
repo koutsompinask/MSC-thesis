@@ -55,12 +55,12 @@ export function RemoteControlPage() {
   const connected = status === 'connected'
 
   return (
-    <div className="min-h-screen w-screen overflow-hidden bg-[#07111f] text-white flex flex-col">
-      <header className="px-5 py-5 border-b border-cyan-900/60">
+    <div className="h-dvh w-screen overflow-x-hidden overflow-y-auto bg-[#07111f] text-white flex flex-col">
+      <header className="px-4 py-3 border-b border-cyan-900/60">
         <div className="text-xs uppercase tracking-[0.28em] text-cyan-300 font-bold">Thesis Remote</div>
         <div className="mt-2 flex items-end justify-between">
           <div>
-            <div className="text-3xl font-black">Slide {totalSlides ? currentSlide + 1 : '-'}</div>
+            <div className="text-2xl font-black">Slide {totalSlides ? currentSlide + 1 : '-'}</div>
             <div className="text-sm text-slate-400">of {totalSlides || '-'}</div>
           </div>
           <div
@@ -72,17 +72,17 @@ export function RemoteControlPage() {
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col gap-4 p-5">
+      <main className="flex flex-col gap-3 p-4 pb-5">
         <div className="grid grid-cols-2 gap-3">
           <button
-            className="rounded-2xl bg-slate-800 py-6 text-xl font-black active:scale-[0.98] disabled:opacity-40"
+            className="rounded-2xl bg-slate-800 py-4 text-lg font-black active:scale-[0.98] disabled:opacity-40"
             disabled={!connected}
             onClick={() => command({ type: 'command', action: 'prev' })}
           >
             Previous
           </button>
           <button
-            className="rounded-2xl bg-cyan-500 py-6 text-xl font-black text-slate-950 active:scale-[0.98] disabled:opacity-40"
+            className="rounded-2xl bg-cyan-500 py-4 text-lg font-black text-slate-950 active:scale-[0.98] disabled:opacity-40"
             disabled={!connected}
             onClick={() => command({ type: 'command', action: 'next' })}
           >
@@ -92,14 +92,14 @@ export function RemoteControlPage() {
 
         <div className="grid grid-cols-2 gap-3">
           <button
-            className="rounded-xl bg-slate-900 py-4 font-bold text-slate-300 active:scale-[0.98] disabled:opacity-40"
+            className="rounded-xl bg-slate-900 py-3 font-bold text-slate-300 active:scale-[0.98] disabled:opacity-40"
             disabled={!connected}
             onClick={() => command({ type: 'command', action: 'home' })}
           >
             First Slide
           </button>
           <button
-            className="rounded-xl bg-slate-900 py-4 font-bold text-slate-300 active:scale-[0.98] disabled:opacity-40"
+            className="rounded-xl bg-slate-900 py-3 font-bold text-slate-300 active:scale-[0.98] disabled:opacity-40"
             disabled={!connected}
             onClick={() => command({ type: 'command', action: 'end' })}
           >
@@ -107,8 +107,8 @@ export function RemoteControlPage() {
           </button>
         </div>
 
-        <section className="flex-1 flex flex-col min-h-0">
-          <div className="mb-4 rounded-2xl border border-cyan-900/70 bg-slate-950/70 p-3">
+        <section className="flex flex-col">
+          <div className="mb-3 rounded-2xl border border-cyan-900/70 bg-slate-950/70 p-3">
             <div className="mb-3 flex items-center justify-between">
               <div className="font-bold text-cyan-200">Slide 20 Demo</div>
               <button
@@ -159,7 +159,7 @@ export function RemoteControlPage() {
           </div>
           <div
             ref={padRef}
-            className="flex-1 rounded-3xl border border-cyan-800/70 bg-[radial-gradient(circle_at_center,#12385a_0,#07111f_70%)] touch-none relative overflow-hidden"
+            className="h-[clamp(130px,26dvh,220px)] rounded-3xl border border-cyan-800/70 bg-[radial-gradient(circle_at_center,#12385a_0,#07111f_70%)] touch-none relative overflow-hidden"
             onPointerDown={(event) => {
               event.currentTarget.setPointerCapture(event.pointerId)
               updatePointer(event, true)
