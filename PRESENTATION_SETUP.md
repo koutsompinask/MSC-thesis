@@ -111,8 +111,8 @@ Then open: **http://localhost:5173**
 |---|-------|------|
 | 1 | Title | Dark |
 | 2 | Roadmap | Dark |
-| 3 | The Fraud Detection Challenge | Light |
-| 4 | Research Questions | Light |
+| 3 | Research Questions | Light |
+| 4 | The Fraud Detection Challenge | Light |
 | 5 | Literature Landscape | Light |
 | 6 | Dataset | Light |
 | 7 | Methodology Pipeline | Light |

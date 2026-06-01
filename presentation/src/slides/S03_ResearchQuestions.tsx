@@ -13,9 +13,9 @@ const rqs = [
     t: 'How does altering the decision threshold change fraud detection behavior — specifically the recall–precision trade-off relevant to operational deployment?' },
 ]
 
-export function S04_ResearchQuestions() {
+export function S03_ResearchQuestions() {
   return (
-    <LightSlide title="Research Questions" num={4}>
+    <LightSlide title="Research Questions" num={3}>
       <div className="flex flex-col h-full gap-3">
         <div className="grid grid-cols-2 gap-4 flex-1">
           {rqs.map(({ n, color, q, t }, i) => (

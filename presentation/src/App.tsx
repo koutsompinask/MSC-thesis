@@ -8,8 +8,8 @@ import { RemoteControlPage } from './remote/RemoteControlPage'
 import { usePresenterRemote } from './remote/usePresenterRemote'
 import { S01_Title } from './slides/S01_Title'
 import { S02_Roadmap } from './slides/S02_Roadmap'
-import { S03_Challenge } from './slides/S03_Challenge'
-import { S04_ResearchQuestions } from './slides/S04_ResearchQuestions'
+import { S03_ResearchQuestions } from './slides/S03_ResearchQuestions'
+import { S04_Challenge } from './slides/S04_Challenge'
 import { S05_Literature } from './slides/S05_Literature'
 import { S06_Dataset } from './slides/S06_Dataset'
 import { S07_Methodology } from './slides/S07_Methodology'
@@ -29,7 +29,7 @@ import { S20_LiveDemo } from './slides/S20_LiveDemo'
 import { S21_ThankYou } from './slides/S21_ThankYou'
 
 const SLIDES = [
-  S01_Title, S02_Roadmap, S03_Challenge, S04_ResearchQuestions,
+  S01_Title, S02_Roadmap, S03_ResearchQuestions, S04_Challenge,
   S05_Literature, S06_Dataset, S07_Methodology, S08_DataSplit,
   S09_EDA, S10_FeatureEngineering, S11_ExperimentalSetup,
   S12_ResultsBaseline, S13_ResultsDownsampling, S14_SHAP, S15_ResultsReduction, S16_ResultsThreshold,

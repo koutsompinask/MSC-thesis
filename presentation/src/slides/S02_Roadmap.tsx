@@ -3,9 +3,9 @@ import { DarkSlide } from '../components/SlideLayout'
 import { C } from '../design/tokens'
 
 const appSections = [
-  ['01', 'Challenge & Context',       'The fraud detection problem and why it\'s hard'],
-  ['02', 'Literature & Model Choice', 'ML landscape review and gradient boosting rationale'],
-  ['03', 'Research Design',           'Four research questions guiding the study'],
+  ['01', 'Research Questions',        'Four questions guiding the experimental design'],
+  ['02', 'Challenge & Context',       'The fraud detection problem and why it\'s hard'],
+  ['03', 'Literature & Model Choice', 'ML landscape review and gradient boosting rationale'],
   ['04', 'Dataset & Methodology',     'IEEE-CIS data, pipeline, feature engineering, data split'],
   ['05', 'Experimental Results',      'Four configurations across three models'],
   ['06', 'Synthesis & Insights',      'Cross-experiment patterns and what they mean'],
@@ -14,9 +14,9 @@ const appSections = [
 ]
 
 const exportSections = [
-  ['01', 'Challenge & Context',       'The fraud detection problem and why it\'s hard'],
-  ['02', 'Literature & Model Choice', 'ML landscape review and gradient boosting rationale'],
-  ['03', 'Research Design',           'Four research questions guiding the study'],
+  ['01', 'Research Questions',        'Four questions guiding the experimental design'],
+  ['02', 'Challenge & Context',       'The fraud detection problem and why it\'s hard'],
+  ['03', 'Literature & Model Choice', 'ML landscape review and gradient boosting rationale'],
   ['04', 'Dataset & Methodology',     'IEEE-CIS data, pipeline, feature engineering, data split'],
   ['05', 'Experimental Results',      'Four configurations across three models'],
   ['06', 'Synthesis & Insights',      'Cross-experiment patterns and what they mean'],

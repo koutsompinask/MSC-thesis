@@ -12,9 +12,9 @@ const challenges = [
 ]
 
 
-export function S03_Challenge() {
+export function S04_Challenge() {
   return (
-    <LightSlide title="The Fraud Detection Challenge" num={3}>
+    <LightSlide title="The Fraud Detection Challenge" num={4}>
       <div className="flex gap-4 h-full">
         {/* Left: challenges */}
         <div
