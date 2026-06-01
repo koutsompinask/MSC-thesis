@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "playwright": "^1.60.0",
+    "pptxgenjs": "^4.0.1"
+  }
+}

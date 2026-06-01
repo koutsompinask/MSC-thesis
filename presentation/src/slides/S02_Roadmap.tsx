@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { DarkSlide } from '../components/SlideLayout'
 import { C } from '../design/tokens'
 
-const sections = [
+const appSections = [
   ['01', 'Challenge & Context',       'The fraud detection problem and why it\'s hard'],
   ['02', 'Literature & Model Choice', 'ML landscape review and gradient boosting rationale'],
   ['03', 'Research Design',           'Four research questions guiding the study'],
@@ -13,7 +13,20 @@ const sections = [
   ['08', 'Conclusions',               'Key takeaways and future research directions'],
 ]
 
+const exportSections = [
+  ['01', 'Challenge & Context',       'The fraud detection problem and why it\'s hard'],
+  ['02', 'Literature & Model Choice', 'ML landscape review and gradient boosting rationale'],
+  ['03', 'Research Design',           'Four research questions guiding the study'],
+  ['04', 'Dataset & Methodology',     'IEEE-CIS data, pipeline, feature engineering, data split'],
+  ['05', 'Experimental Results',      'Four configurations across three models'],
+  ['06', 'Synthesis & Insights',      'Cross-experiment patterns and what they mean'],
+  ['07', 'Conclusions',               'Key takeaways and future research directions'],
+]
+
 export function S02_Roadmap() {
+  const isPptxExport = new URLSearchParams(window.location.search).has('pptxExport')
+  const sections = isPptxExport ? exportSections : appSections
+
   return (
     <DarkSlide>
       <div className="w-full h-full flex flex-col px-10 py-8">
@@ -24,7 +37,7 @@ export function S02_Roadmap() {
 
         <div
           className="flex-1 grid grid-cols-2 gap-4"
-          style={{ gridTemplateRows: 'repeat(4, minmax(0, 1fr))' }}
+          style={{ gridTemplateRows: `repeat(${isPptxExport ? 4 : 4}, minmax(0, 1fr))` }}
         >
           {sections.map(([num, title, desc], i) => (
             <motion.div
