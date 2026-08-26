@@ -210,7 +210,17 @@ Check for TypeScript errors in the output.
 | `POST` | `/predict_explain` | Fraud probability + top-15 SHAP values |
 | `POST` | `/predict` | Binary prediction (legacy) |
 
-All endpoints require header: `X-API-Key: c1c58f5a-8f7c-4bdb-9d78-1c3b12c9f3f2`
+The `/predict` and `/predict_explain` endpoints require the header `X-API-Key`
+(`/examples` is open). The Vite dev server attaches it
+automatically when proxying `/api`, so the browser never sends it directly.
+
+The key defaults to `local-dev-demo-key` and is demo-only. To change it, set
+`FRAUD_API_KEY` for both processes:
+
+```bash
+export FRAUD_API_KEY="$(uuidgen)"
+make run
+```
 
 ---
 
