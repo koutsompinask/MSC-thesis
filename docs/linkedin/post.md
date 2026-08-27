@@ -14,7 +14,7 @@ I approached it as a system, not just a notebook experiment:
 • SHAP-based feature analysis, reducing 748 features to 215
 • A FastAPI service that returns both a fraud probability and the factors behind it
 
-The threshold mattered more than the model. Moving it from 0.5 to 0.1 took recall from 0.64 to 0.86 and precision from 0.40 to 0.14. The model ranks risk. The business decides where to draw the line.
+The threshold mattered more than the model. Moving it from 0.5 to 0.1 took recall from 0.66 to 0.90 and precision from 0.35 to 0.11. The model ranks risk. The business decides where to draw the line.
 
 There is still work to do: calibration, drift monitoring, and a cost model that can turn threshold selection into an explicit business decision.
 
