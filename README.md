@@ -42,7 +42,7 @@ which is what makes "which configuration produced this number" answerable months
 ![MLflow run table](docs/images/mlflow-runs.png)
 
 **Confidence intervals, not just point estimates.** Every metric carries a bootstrap confidence
-interval over 200 resamples (`_bootstrap_ci` in `evaluate_models_util.py`), so a gap between two
+interval over 200 resamples (`_bootstrap_ci` in `src/evaluate_models_util.py`), so a gap between two
 models can be told apart from noise. This turns out to matter: see the results below.
 
 **Feature selection by cross-model agreement.** SHAP values were computed per model and a feature
@@ -87,7 +87,7 @@ support.
 
 Moving one number, chosen by a human, swings the behaviour of the system far harder than the choice
 of model does. The model ranks risk; the business decides where to cut, based on review capacity and
-the relative cost of a missed fraud versus a false alarm. `evaluate_models_util.py` includes a
+the relative cost of a missed fraud versus a false alarm. `src/evaluate_models_util.py` includes a
 cost-optimal threshold search (`_find_cost_optimal_threshold`) for exactly this reason.
 
 ## What this is not
@@ -109,22 +109,26 @@ These are the next things worth building, not caveats to wave away.
 
 - Competition page: https://www.kaggle.com/competitions/ieee-fraud-detection/data
 - Local dataset folder in this repo: `ieee-fraud-detection-data/`
-- Detailed dataset notes: `Detailed-Description.md`
+- Detailed dataset notes: `docs/Detailed-Description.md`
 
 590,540 labelled transactions, 434 original columns, expanded to 748 features by feature engineering
 and reduced to 215 by SHAP agreement.
 
 ## Repository Structure
 
+Run the notebooks from the repository root. They resolve `ieee-fraud-detection-data/` relative to
+the working directory, and add `src/` to the import path themselves.
+
 - `EDA_and_preprocessing.ipynb`: exploratory analysis and feature engineering workflow
-- `training.ipynb`: experiment/training notebook
-- `train_models_util.py`: reusable model training helpers (XGBoost, CatBoost, LightGBM, baselines)
-- `evaluate_models_util.py`: evaluation metrics, plots, threshold selection, MLflow logging
-- `feature_importance.py`: SHAP-based global and case-level explainability helpers
-- `cleanup.py`: utility to delete MLflow runs marked as deleted
-- `mlruns/`: MLflow tracking artifacts
-- `fastapi/`: API service code (`main.py`, request schema, config)
+- `training.ipynb`: experiment and training notebook
+- `src/train_models_util.py`: model training helpers (XGBoost, CatBoost, LightGBM, baselines)
+- `src/evaluate_models_util.py`: evaluation metrics, plots, threshold selection, MLflow logging
+- `src/feature_importance.py`: SHAP global and case level explainability helpers
+- `src/cleanup.py`: deletes MLflow run folders marked as deleted
+- `fastapi/`: inference service (`main.py`, request schema, config)
 - `presentation/`: React slide deck used for the defence, including the live demo
+- `docs/`: dataset notes, presentation setup, the results workbook and post material
+- `mlruns/`: MLflow tracking artifacts
 
 ## Environment Setup
 
@@ -141,9 +145,9 @@ pip install -r requirements.txt
 2. Run `EDA_and_preprocessing.ipynb` to prepare features.
 3. Run `training.ipynb` for model training and experiment tracking.
 4. Use utilities from:
-   - `train_models_util.py` for model fitting/tuning
-   - `evaluate_models_util.py` for model evaluation and artifact generation
-   - `feature_importance.py` for SHAP explainability outputs
+   - `src/train_models_util.py` for model fitting/tuning
+   - `src/evaluate_models_util.py` for model evaluation and artifact generation
+   - `src/feature_importance.py` for SHAP explainability outputs
 
 ## MLflow
 
@@ -178,4 +182,4 @@ To run the slide deck with the live demo, `make run` from the project root start
 ## Notes
 
 - This repository tracks generated artifacts (`mlruns/`, search plots, etc.).
-- `cleanup.py` can remove run folders whose `meta.yaml` has `lifecycle_stage: deleted`.
+- `src/cleanup.py` can remove run folders whose `meta.yaml` has `lifecycle_stage: deleted`.
