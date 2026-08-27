@@ -1,71 +1,45 @@
-# LinkedIn post — MSc thesis (10/10)
+# LinkedIn post
 
-## Recommended post
+## Post
 
-My MSc thesis on fraud detection was graded 10/10.
+About 3.5% of transactions in a real payments dataset are fraudulent. A model that approves everything scores 96.5% accuracy and is worthless.
 
-The part I'm proudest of isn't the model score. It's that anyone can clone the repo and reproduce every number in it.
+That was the starting point of my MSc thesis at the University of Athens, on 590K+ labelled card transactions.
 
-Fraud is rare: about 3.5% of transactions in the IEEE-CIS dataset. A model that calls everything legitimate is 96.5% accurate and completely useless. The real question was never accuracy. It's how much fraud you accept missing so you don't block paying customers.
+I approached it as a system, not just a notebook experiment:
+• Chronological splits to avoid future information leaking into training
+• Optuna tuning inside the training window, never touching the holdout
+• MLflow tracking for experiments and models
+• Bootstrap confidence intervals, to tell real gaps from noise
+• SHAP-based feature analysis, reducing 748 features to 215
+• A FastAPI service that returns both a fraud probability and the factors behind it
 
-I built it like a system, not a notebook.
+The threshold mattered more than the model. Moving it from 0.5 to 0.1 took recall from 0.64 to 0.86 and precision from 0.40 to 0.14. The model ranks risk. The business decides where to draw the line.
 
-Chronological split, not random. Trained on the first 80% by transaction time, kept the last 20% untouched. A random split scores higher and lies to you, because fraud patterns move over time.
+There is still work to do: calibration, drift monitoring, and a cost model that can turn threshold selection into an explicit business decision.
 
-Optuna tuning run entirely inside the training window, with expanding time-series cross-validation. The holdout never informed tuning, feature selection or the threshold.
+But that's also been one of the biggest lessons from this project:
 
-MLflow on every run: params, metrics, artifacts. Months later, "which config produced this number?" was still answerable. Including at the defense.
+Building the model is only part of building the system.
 
-Every metric logged with bootstrap confidence intervals, 200 resamples each. That is what tells you whether a gap between two models is a real difference or noise.
+Grade: 10/10.
+Results, code, full write up: github.com/koutsompinask/MSC-thesis
 
-SHAP for cross-model agreement. 748 engineered features down to 215, keeping only what 2 of 3 models ranked in their top 30%. Performance held.
+#MachineLearning #FraudDetection #MLOps #SoftwareEngineering
 
-A FastAPI service loading the logged model, returning a fraud probability plus a per-transaction explanation. A model that can't answer "why did you flag this?" doesn't survive contact with a fraud-ops team.
+## Media
 
-What stayed with me isn't which model won. On the final model, moving the decision threshold from 0.5 to 0.1 took recall from 0.64 to 0.86 and precision from 0.40 to 0.14. One number, chosen by a human, swinging the system harder than any gap between LightGBM, XGBoost and CatBoost. The model ranks risk. The business decides where to cut, based on review capacity and what a false alarm costs.
+Document post: `Machine Learning for Fraud Detection.pdf` (12 slides, 2.2 MB).
+LinkedIn uses the filename as the document title shown above the carousel, so keep the name as is.
 
-Scope, honestly: public benchmark data, simulated user anchors, an illustrative demo. Not a production fraud system.
+A document post cannot also carry images or video, so the three screenshots are not attached
+separately. The carousel already contains the SHAP and live demo visuals.
 
-Thanks to my supervisor and committee. After three years building enterprise backends, the lesson that stuck is how much of ML is ordinary engineering: reproducibility, traceability, and being honest about what your evaluation actually proves.
+## Before posting
 
-Code and notebooks in the first comment.
-
-#MachineLearning #FraudDetection #MLOps #DataScience #SoftwareEngineering
-
----
-
-## Alternative hook (engineering-first)
-
-Replace the first two lines with:
-
-> Any model can hit 0.92 ROC-AUC on a random split. That's exactly why I didn't use one.
-
-...and move the grade to the closing block:
-
-> Thanks to my supervisor and committee for the 10/10. After three years building enterprise backends, the lesson that stuck is how much of ML is ordinary engineering: reproducibility, traceability, and being honest about what your evaluation actually proves.
-
----
-
-## First comment (post immediately after publishing)
-
-Repo, notebooks and the FastAPI demo service: https://github.com/koutsompinask/MSC-thesis
-
-Dataset: IEEE-CIS Fraud Detection (Kaggle), 590,540 labeled transactions.
-Stack: Python, LightGBM / XGBoost / CatBoost, Optuna, MLflow, SHAP, FastAPI.
-
----
-
-## Media (attach in this order)
-
-1. `demo.png` — the live demo: a scored transaction with its probability gauge and SHAP waterfall.
-2. `mlflow-runs.png` — the MLflow experiment table, evidence of the tracked pipeline.
-3. `shap-summary.png` — global feature attributions after reduction.
-
-Export at 1200x1200 or 1200x627. Check the SHAP labels are readable at ~390px wide.
-
-## Publishing checklist
-
-- [ ] Link in the FIRST COMMENT, not the body.
-- [ ] Tag supervisor / NKUA if you want the academic reach.
-- [ ] Post Tue-Thu, 09:00-11:00 EET.
-- [ ] Don't add the 9.58 GPA. The 10/10 is enough.
+- [ ] Commit and push. The README is the payoff for the link and is not on GitHub yet.
+- [ ] Open github.com/koutsompinask/MSC-thesis and check the README renders, images included.
+- [ ] Upload the PDF as a document post, confirm the title reads "Machine Learning for Fraud Detection".
+- [ ] Swipe all 12 slides on a phone before publishing.
+- [ ] Tag your supervisor and the university if you want the academic reach.
+- [ ] Tuesday to Thursday, 09:00 to 11:00 EET.
